@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "comfyui-astral-image"
 version = "0.3.25"
 description = "ComfyUI image nodes for in-node loading, resizing, cropping, rotating, masking, and Qwen-Image 2.1 sizing."

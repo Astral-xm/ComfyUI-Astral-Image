@@ -1,4 +1,4 @@
-﻿# ComfyUI-Astral-Image
+# ComfyUI-Astral-Image
 
 作者：**xm** · 许可证：**AGPL-3.0** · 节点与界面中的原作者信息不得删除或替换
 
