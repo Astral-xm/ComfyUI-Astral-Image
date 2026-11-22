@@ -1,0 +1,32 @@
+﻿[project]
+name = "comfyui-astral-image"
+version = "0.3.25"
+description = "ComfyUI image nodes for in-node loading, resizing, cropping, rotating, masking, and Qwen-Image 2.1 sizing."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "xm" }]
+keywords = ["comfyui", "comfyui-nodes", "image-editor", "qwen-image", "resolution"]
+classifiers = [
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Astral-xm/ComfyUI-Astral-Image"
+Repository = "https://github.com/Astral-xm/ComfyUI-Astral-Image"
+Issues = "https://github.com/Astral-xm/ComfyUI-Astral-Image/issues"
+
+[tool.comfy]
+PublisherId = "xm"
+DisplayName = "ComfyUI-Astral-Image"
+Icon = ""
+includes = []
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["nodes"]
