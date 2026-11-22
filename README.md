@@ -43,6 +43,20 @@ ComfyUI/custom_nodes/ComfyUI-Astral-Image
 - ComfyUI 0.3.60 及以上：使用 V3 `comfy_entrypoint` 入口。
 - 旧版本 ComfyUI：自动使用 V2 `NODE_CLASS_MAPPINGS` 入口。
 
+## 依赖
+
+不额外安装 pip 包，使用的都是 ComfyUI 自带组件：
+
+| 依赖 | 用途 |
+| --- | --- |
+| `numpy`、`torch` | 图像缩放、遮罩与 Latent 计算 |
+| `Pillow` | 图片解码、编码与编辑 |
+| `comfy_api`、`comfy.utils`、`folder_paths`、`node_helpers` | ComfyUI 节点接口 |
+
+仓库根目录的 `requirements.txt` 只包含说明，不会安装额外包。
+
+可选依赖：`ComfyUI-Prompt-Assistant`，用于图片预览上的中英文提示词反推按钮；未安装时节点仍可正常使用。
+
 ## ResolutionSelectLatent
 
 搜索 `ResolutionSelectLatent`，或节点 ID `ResolutionSelectLatent`。节点输出 `Latent`、`宽度`、`高度`。

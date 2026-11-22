@@ -1,0 +1,7 @@
+# ComfyUI-Astral-Image
+#
+# No additional pip packages are required.
+# ComfyUI already provides: numpy, torch, Pillow, and the comfy_api modules.
+#
+# Optional node pack:
+#   ComfyUI-Prompt-Assistant  (hover prompt-inversion buttons in the image editor)
