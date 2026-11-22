@@ -146,6 +146,14 @@ python .\dev_check.py
 
 `qwen21.py` 中另含未注册的实验性 Qwen 2.1 前处理类，暂不作为节点提供。
 
+## 发布新版本（维护者）
+
+1. 修改 `pyproject.toml` 中的 `version`；确认 `PublisherId` 与 registry.comfy.org 上的发布者 ID 一致。
+2. 在 registry.comfy.org 创建发布者并生成 API Key。
+3. 安装 comfy-cli：`python -m pip install comfy-cli`
+4. 在仓库根目录运行 `comfy node publish`，按提示输入 API Key。
+5. 发布成功后，ComfyUI-Manager 会通过 Comfy Registry 检测新版本并提供更新。
+
 ## 许可与署名
 
 本项目以 **GNU Affero General Public License v3.0（AGPL-3.0）** 发布。你可以在遵守许可证的前提下使用、修改和分发；通过网络提供服务时也必须提供完整源代码。
