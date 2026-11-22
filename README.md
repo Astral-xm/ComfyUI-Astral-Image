@@ -140,14 +140,14 @@ ComfyUI/input/image_astral/edited
 
 右击节点中的图片预览，会调用 ComfyUI 官方的节点图片菜单，包含`打开图像`、`复制图像`和`保存图像`等与官方`加载图像`节点一致的操作。
 
-安装并启用 [ComfyUI-Astral-Manage](https://github.com/Astral-xm/ComfyUI-Astral-Manage) 后，把鼠标移到图片上会在左上角显示 `中` 和 `EN` 两个按钮：
+安装并启用 [ComfyUI-Astral-Manage](https://github.com/Astral-xm/ComfyUI-Astral-Manage) 后，选中本节点时，Manage 会在画布浮动工具栏显示 `中` 和 `EN` 两个反推按钮：
 
 - `中`：调用 Manage 的图像反推接口生成简体中文提示词。
 - `EN`：生成英文提示词。
 
-反推完成后结果会自动复制到剪贴板，并在节点底部状态栏显示完成状态。请求会复用 Manage 的图像反推设置，包括 API / 本地模式、系统提示词规则和 Skill；请先在 Manage 的资产管理器中配置好图像 API，或配置本地 GGUF 模型。
+反推完成后结果会自动复制到剪贴板，并由 Manage 显示完成状态。请求会复用 Manage 的图像反推设置，包括 API / 本地模式、系统提示词规则和 Skill；请先在 Manage 的资产管理器中配置好图像 API，或配置本地 GGUF 模型。
 
-未安装 Manage 时不显示反推按钮，图片加载、编辑和其他功能不受影响。本项目不再依赖 `ComfyUI-Prompt-Assistant`。
+本节点自身不再绘制反推按钮，因此不会出现重复的两组图标。未安装 Manage 时不显示反推工具栏，图片加载、编辑和其他功能不受影响。本项目不再依赖 `ComfyUI-Prompt-Assistant`。
 
 ## 恢复图像尺寸
 

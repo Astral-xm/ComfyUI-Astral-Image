@@ -16,8 +16,6 @@ const TARGET_WIDGETS = [
   "target_height",
 ];
 const NATIVE_IMAGE_PREVIEW_WIDGET = "$$canvas-image-preview";
-const PROMPT_TASK_ENDPOINT = "/assets-astral/prompt-task";
-const MAX_INVERT_IMAGE_EDGE = 2048;
 const MASK_EDITOR_IMAGE_WIDGET = "image";
 const PASTE_IMAGE_SUBFOLDER = "image_astral/pasted";
 const EDITOR_OUTPUT_COUNT = 6;
@@ -171,47 +169,6 @@ function ensureNodeStyles() {
     .xm-astral-preview img:focus-visible {
       outline: 2px solid #5ea6ff;
       outline-offset: -3px;
-    }
-    .xm-astral-invert-tools {
-      position: absolute;
-      top: 6px;
-      left: 6px;
-      z-index: 3;
-      display: flex;
-      gap: 4px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity .12s ease;
-    }
-    .xm-astral-preview:hover .xm-astral-invert-tools,
-    .xm-astral-invert-tools.busy {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .xm-astral-invert-tools[hidden] { display: none; }
-    .xm-astral-invert-button {
-      box-sizing: border-box;
-      min-width: 28px;
-      height: 22px;
-      padding: 0 7px;
-      appearance: none;
-      border: 1px solid rgba(255, 255, 255, .26);
-      border-radius: 3px;
-      background: rgba(12, 16, 24, .72);
-      color: #f4f4f5;
-      font: 600 11px/20px system-ui, -apple-system, "Segoe UI", sans-serif;
-      cursor: pointer;
-    }
-    .xm-astral-invert-button:hover {
-      background: rgba(40, 50, 68, .92);
-    }
-    .xm-astral-invert-button:focus-visible {
-      outline: 2px solid #5ea6ff;
-      outline-offset: 1px;
-    }
-    .xm-astral-invert-button:disabled {
-      cursor: wait;
-      opacity: .6;
     }
     .xm-astral-edit-fab {
       box-sizing: border-box;
@@ -844,166 +801,6 @@ function installMaskEditorImageAlias(node) {
   return alias;
 }
 
-function astralManageAvailable() {
-  return Boolean(globalThis.__astralPromptTools);
-}
-
-function promptToolSettings() {
-  const settings =
-    globalThis.__astralPromptTools?.state?.settings?.invert || null;
-  return {
-    mode: settings?.mode === "local" ? "local" : "api",
-    ruleId: String(settings?.ruleId || ""),
-    skillIds: settings?.skillId ? [String(settings.skillId)] : [],
-    clearVram: Boolean(settings?.clearVram),
-  };
-}
-
-function imageToJpegAttachment(image, name = "image_astral.jpg") {
-  const width = image?.naturalWidth || image?.width || 0;
-  const height = image?.naturalHeight || image?.height || 0;
-  if (!width || !height) throw new Error("图片尚未载入完成");
-
-  const ratio = Math.min(
-    1,
-    MAX_INVERT_IMAGE_EDGE / Math.max(width, height),
-  );
-  const targetWidth = Math.max(1, Math.round(width * ratio));
-  const targetHeight = Math.max(1, Math.round(height * ratio));
-  const canvas = document.createElement("canvas");
-  canvas.width = targetWidth;
-  canvas.height = targetHeight;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("无法创建图片画布");
-
-  context.fillStyle = "#111827";
-  context.fillRect(0, 0, targetWidth, targetHeight);
-  context.drawImage(image, 0, 0, targetWidth, targetHeight);
-
-  let data = "";
-  try {
-    data = canvas.toDataURL("image/jpeg", 0.92);
-  } catch {
-    throw new Error("图片像素不可读取，请先保存到 input 或 output");
-  }
-  const baseName =
-    String(name || "")
-      .replace(/\.[^./\\]+$/, "")
-      .trim() || "image_astral";
-  return {
-    kind: "image",
-    mimeType: "image/jpeg",
-    data,
-    name: `${baseName}.jpg`,
-  };
-}
-
-async function fetchPromptTask(payload) {
-  const response = await api.fetchApi(PROMPT_TASK_ENDPOINT, {
-    method: "POST",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const body = await response.text();
-  let data = null;
-  if (body) {
-    try {
-      data = JSON.parse(body);
-    } catch {
-      throw new Error(`HTTP ${response.status}: ${body.slice(0, 160)}`);
-    }
-  }
-  if (!response.ok) {
-    throw new Error(data?.error || `HTTP ${response.status}`);
-  }
-  return data || {};
-}
-
-async function copyPromptText(value) {
-  const content = String(value || "");
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(content);
-    return;
-  }
-  const scratch = document.createElement("textarea");
-  scratch.value = content;
-  scratch.style.position = "fixed";
-  scratch.style.opacity = "0";
-  document.body.append(scratch);
-  try {
-    scratch.select?.();
-    document.execCommand?.("copy");
-  } finally {
-    scratch.remove?.();
-  }
-}
-
-function setInvertBusy(node, busy) {
-  node._astralInvertBusy = busy;
-  node._astralInvertTools?.classList.toggle("busy", busy);
-  for (const button of [node._astralInvertZh, node._astralInvertEn]) {
-    if (button) button.disabled = busy;
-  }
-  node.graph?.setDirtyCanvas?.(true, true);
-}
-
-async function runImageInversion(node, language) {
-  if (!node || node._astralInvertBusy || !node._astralSourceUrl) return;
-  if (!astralManageAvailable()) {
-    setNodeStatus(node, "需要安装并启用 ComfyUI-Astral-Manage", true);
-    return;
-  }
-  const image = node._astralPreviewImg;
-  if (!image?.classList.contains("loaded")) return;
-
-  const isZh = language === "zh";
-  setInvertBusy(node, true);
-  setNodeStatus(
-    node,
-    isZh ? "正在反推中文提示词…" : "正在反推英文提示词…",
-  );
-  try {
-    const sourceName =
-      String(node._astralSourceUrl || "")
-        .split("?")[0]
-        .split("/")
-        .pop() || "image_astral.jpg";
-    const attachment = imageToJpegAttachment(image, sourceName);
-    const settings = promptToolSettings();
-    const requestId = `image-astral-${Date.now().toString(36)}-${Math.random()
-      .toString(36)
-      .slice(2, 9)}`;
-    const result = await fetchPromptTask({
-      requestId,
-      text: isZh
-        ? "请用简体中文输出提示词。"
-        : "Output the prompt in English.",
-      task: "invert",
-      mode: settings.mode,
-      ruleId: settings.ruleId,
-      skillIds: settings.skillIds,
-      attachments: [attachment],
-      clearVram: settings.clearVram,
-      targetLanguage: language,
-      sourceLanguage: "auto",
-    });
-    const text = String(result?.text || "").trim();
-    if (!text) throw new Error("模型没有返回可用内容");
-    await copyPromptText(text);
-    setNodeStatus(
-      node,
-      isZh
-        ? "中文反推完成，已复制到剪贴板"
-        : "English inversion copied to clipboard",
-    );
-  } catch (error) {
-    console.error("[Image Astral] 提示词反推失败", error);
-    setNodeStatus(node, error?.message || "提示词反推失败", true);
-  } finally {
-    setInvertBusy(node, false);
-  }
-}
 
 function openImageContextMenu(node, event) {
   event.preventDefault();
@@ -1445,7 +1242,6 @@ async function refreshNodePreview(node, force = false) {
       image.classList.add("loaded");
       node._astralEmpty.classList.add("hidden");
       node._astralEditButton.hidden = false;
-      node._astralInvertTools.hidden = !astralManageAvailable();
       syncNodePreviewImage(node);
       setNodeStatus(node, `${image.naturalWidth} × ${image.naturalHeight} px`);
       syncNodeControls(node);
@@ -1458,7 +1254,6 @@ async function refreshNodePreview(node, force = false) {
       image.classList.remove("loaded");
       node._astralEmpty.classList.remove("hidden");
       node._astralEditButton.hidden = true;
-      node._astralInvertTools.hidden = true;
       syncNodePreviewImage(node);
       setNodeStatus(node, "图片预览失败，请重新上传或检查文件。", true);
       syncNodeControls(node);
@@ -1590,27 +1385,11 @@ function activateImageNode(node) {
   previewImage.alt = "Image Astral 图片预览";
   previewImage.tabIndex = 0;
   previewImage.title =
-    "悬停显示提示词反推按钮；右击打开图像菜单；单击后可按 Ctrl+V 粘贴图片";
-  const invertTools = document.createElement("div");
-  invertTools.className = "xm-astral-invert-tools";
-  invertTools.hidden = true;
-  const invertZh = document.createElement("button");
-  invertZh.className = "xm-astral-invert-button";
-  invertZh.type = "button";
-  invertZh.textContent = "中";
-  invertZh.title = "中文反推提示词（ComfyUI-Astral-Manage）";
-  invertZh.setAttribute("aria-label", "中文反推提示词");
-  const invertEn = document.createElement("button");
-  invertEn.className = "xm-astral-invert-button";
-  invertEn.type = "button";
-  invertEn.textContent = "EN";
-  invertEn.title = "English prompt inversion (ComfyUI-Astral-Manage)";
-  invertEn.setAttribute("aria-label", "Invert image prompt in English");
-  invertTools.append(invertZh, invertEn);
+    "右击打开图像菜单；单击后可按 Ctrl+V 粘贴图片";
   const empty = document.createElement("div");
   empty.className = "xm-astral-empty";
   empty.textContent = "请在上方“加载图像”控件上传或选择图片";
-  preview.append(previewImage, editButton, invertTools, empty);
+  preview.append(previewImage, editButton, empty);
 
   const meta = document.createElement("div");
   meta.className = "xm-astral-meta";
@@ -1619,9 +1398,6 @@ function activateImageNode(node) {
 
   Object.assign(node, {
     _astralEditButton: editButton,
-    _astralInvertTools: invertTools,
-    _astralInvertZh: invertZh,
-    _astralInvertEn: invertEn,
     _astralPreview: preview,
     _astralPreviewImg: previewImage,
     _astralEmpty: empty,
@@ -1708,25 +1484,10 @@ function activateImageNode(node) {
     event.stopPropagation();
     openEditor();
   });
-  invertZh.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    void runImageInversion(node, "zh");
-  });
-  invertEn.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    void runImageInversion(node, "en");
-  });
   previewImage.addEventListener("click", () => {
     if (!previewImage.classList.contains("loaded")) return;
     node._astralPasteArmed = true;
     previewImage.focus({ preventScroll: true });
-  });
-  previewImage.addEventListener("pointerenter", () => {
-    if (previewImage.classList.contains("loaded")) {
-      invertTools.hidden = !astralManageAvailable();
-    }
   });
   previewImage.addEventListener("contextmenu", (event) => {
     openImageContextMenu(node, event);
