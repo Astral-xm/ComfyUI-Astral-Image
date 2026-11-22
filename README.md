@@ -1,5 +1,10 @@
 # ComfyUI-Astral-Image
 
+## 使用教程
+
+- （B 站）：https://space.bilibili.com/176339505
+- （YouTube）：https://www.youtube.com/@Astral%E6%98%9F%E8%8A%92
+
 作者：**xm** · 许可证：**AGPL-3.0** · 节点与界面中的原作者信息不得删除或替换
 
 面向图像工作流的 ComfyUI 节点包：在节点内完成图片的加载、缩放、裁剪、旋转和遮罩编辑，并提供 Qwen-Image 2.1 的尺寸还原与分辨率选择。
