@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-astral-image"
-version = "0.3.25"
+version = "0.4.0"
 description = "ComfyUI image nodes for in-node loading, resizing, cropping, rotating, masking, and Qwen-Image 2.1 sizing."
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -55,7 +55,7 @@ ComfyUI/custom_nodes/ComfyUI-Astral-Image
 
 仓库根目录的 `requirements.txt` 只包含说明，不会安装额外包。
 
-可选依赖：`ComfyUI-Prompt-Assistant`，用于图片预览上的中英文提示词反推按钮；未安装时节点仍可正常使用。
+可选依赖：[`ComfyUI-Astral-Manage`](https://github.com/Astral-xm/ComfyUI-Astral-Manage)，用于图片预览上的中英文提示词反推按钮；未安装时不显示按钮，其他功能不受影响。
 
 ## ResolutionSelectLatent
 
@@ -136,11 +136,18 @@ ComfyUI/input/image_astral/edited
 - `width`、`height`：最终图像宽高。
 - `resolution`：根据最终目标尺寸自动解析的 Qwen resolution 档位，可直接接到 `TextEncodeQwenImage21.resolution`。
 
-### 图片右键菜单与提示词小助手
+### 图片右键菜单与提示词反推
 
 右击节点中的图片预览，会调用 ComfyUI 官方的节点图片菜单，包含`打开图像`、`复制图像`和`保存图像`等与官方`加载图像`节点一致的操作。
 
-如果已安装并启用 `ComfyUI-Prompt-Assistant`（提示词小助手），把鼠标移到图片上会展开中文、英文提示词反推按钮；移开后自动折叠。未安装该插件时节点仍可正常使用，不会产生额外依赖。
+安装并启用 [ComfyUI-Astral-Manage](https://github.com/Astral-xm/ComfyUI-Astral-Manage) 后，把鼠标移到图片上会在左上角显示 `中` 和 `EN` 两个按钮：
+
+- `中`：调用 Manage 的图像反推接口生成简体中文提示词。
+- `EN`：生成英文提示词。
+
+反推完成后结果会自动复制到剪贴板，并在节点底部状态栏显示完成状态。请求会复用 Manage 的图像反推设置，包括 API / 本地模式、系统提示词规则和 Skill；请先在 Manage 的资产管理器中配置好图像 API，或配置本地 GGUF 模型。
+
+未安装 Manage 时不显示反推按钮，图片加载、编辑和其他功能不受影响。本项目不再依赖 `ComfyUI-Prompt-Assistant`。
 
 ## 恢复图像尺寸
 

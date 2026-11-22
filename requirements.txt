@@ -4,4 +4,4 @@
 # ComfyUI already provides: numpy, torch, Pillow, and the comfy_api modules.
 #
 # Optional node pack:
-#   ComfyUI-Prompt-Assistant  (hover prompt-inversion buttons in the image editor)
+#   ComfyUI-Astral-Manage  (Chinese/English prompt inversion buttons)
