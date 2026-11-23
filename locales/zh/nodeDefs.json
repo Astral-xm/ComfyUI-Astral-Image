@@ -1,0 +1,182 @@
+{
+  "ImageLoadEditor": {
+    "display_name": "加载图像与编辑",
+    "description": "上传并预览图片，可裁剪和旋转；支持按分辨率、倍率、宽度或高度缩放，以及对齐、裁切和补边。作者：xm（ComfyUI-Astral-Image），禁止移除本署名。",
+    "inputs": {
+      "image_file": {
+        "name": "加载图像",
+        "tooltip": "从 ComfyUI input 目录选择或上传图片。"
+      },
+      "scale_type": {
+        "name": "缩放",
+        "tooltip": "选择缩放依据；下方只显示当前类型对应的目标值。",
+        "options": {
+          "None": "无",
+          "By Resolution": "按分辨率",
+          "By Image Scale": "按图像比例",
+          "By Target Width": "按目标宽度",
+          "By Target Height": "按目标高度"
+        }
+      },
+      "target_resolution": {
+        "name": "分辨率",
+        "tooltip": "直接输入 Qwen-Image 2.1 的 resolution 档位，范围 512–4096，步进 32。"
+      },
+      "target_scale": {
+        "name": "缩放目标值",
+        "tooltip": "宽高同时缩放的倍率，例如 1.5 表示放大到 150%。"
+      },
+      "target_width": {
+        "name": "缩放目标值",
+        "tooltip": "目标宽度，高度按原图宽高比自动计算。"
+      },
+      "target_height": {
+        "name": "缩放目标值",
+        "tooltip": "目标高度，宽度按原图宽高比自动计算。"
+      },
+      "upscale_method": {
+        "name": "缩放算法",
+        "tooltip": "nearest-exact / bilinear / area / bicubic / lanczos。"
+      },
+      "alignment_factor": {
+        "name": "对齐因数",
+        "tooltip": "最终宽高取该值的整数倍；1 表示不对齐。"
+      },
+      "tol_ratio": {
+        "name": "tol_ratio",
+        "tooltip": "仅缩放时生效。在 resolution 面积桶附近搜索候选尺寸；值越大允许的面积偏差越大，默认 0.8。"
+      },
+      "edge_mode": {
+        "name": "缩放模式",
+        "tooltip": "处理对齐后产生的多余或残缺像素。",
+        "options": {
+          "Stretch": "拉伸",
+          "Center Crop": "居中裁剪",
+          "Pad / Edge Fill": "填充 / 边缘填充"
+        }
+      },
+      "pad_color": {
+        "name": "填充颜色",
+        "tooltip": "仅填充模式使用；默认 0,0,0，也支持 #RRGGBB 和颜色名。"
+      },
+      "mask_color": {
+        "name": "遮罩颜色",
+        "tooltip": "遮罩图像输出中遮罩区域使用的 RGB 颜色。"
+      },
+      "fill_mask_holes": {
+        "name": "填充遮罩漏洞",
+        "tooltip": "填充没有连接到画面边缘的遮罩内部空洞。"
+      },
+      "bevel_mask": {
+        "name": "遮罩倒角",
+        "tooltip": "对遮罩边缘做 1 像素柔和过渡。"
+      },
+      "invert_mask": {
+        "name": "反转遮罩",
+        "tooltip": "交换遮罩的选中和未选中区域。"
+      },
+      "mask_grow": {
+        "name": "遮罩扩展生长",
+        "tooltip": "正数扩展遮罩，负数收缩遮罩，0 表示不改变。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "image"
+      },
+      "1": {
+        "name": "mask"
+      },
+      "2": {
+        "name": "mask_image"
+      },
+      "3": {
+        "name": "width"
+      },
+      "4": {
+        "name": "height"
+      },
+      "5": {
+        "name": "resolution",
+        "tooltip": "按最终尺寸自动解析的 Qwen resolution 档位。"
+      }
+    }
+  },
+  "RestoreImageSize": {
+    "display_name": "Image Astral · 恢复图像尺寸",
+    "description": "把 Qwen 固定网格生成结果按指定宽高还原，默认使用 lanczos。作者：xm（ComfyUI-Astral-Image），禁止移除本署名。",
+    "inputs": {
+      "upscale_method": {
+        "name": "upscale_method",
+        "tooltip": "恢复原始宽高时使用的插值算法。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "image"
+      },
+      "1": {
+        "name": "width"
+      },
+      "2": {
+        "name": "height"
+      }
+    }
+  },
+  "ResolutionSelectLatent": {
+    "display_name": "ResolutionSelectLatent",
+    "description": "按宽高比和百万像素计算输出尺寸，并按倍数对齐；也可手动指定宽高并创建空 Latent。作者：xm（ComfyUI-Astral-Image），禁止移除本署名。",
+    "inputs": {
+      "aspect_ratio": {
+        "name": "宽高比",
+        "tooltip": "选择预设宽高比；选择“自定义宽高”后直接使用下方的宽度和高度，不再应用百万像素与倍数。",
+        "options": {
+          "1:1 (Square)": "1:1（方形）",
+          "2:3 (Portrait Photo)": "2:3（竖版照片）",
+          "3:2 (Photo)": "3:2（照片）",
+          "3:4 (Portrait Standard)": "3:4（竖版标准）",
+          "4:3 (Standard)": "4:3（标准）",
+          "8:5 (Widescreen)": "8:5（宽屏）",
+          "9:16 (Portrait Widescreen)": "9:16（竖版宽屏）",
+          "16:9 (Widescreen)": "16:9（宽屏）",
+          "21:9 (Ultrawide)": "21:9（超宽）",
+          "Custom Size": "自定义宽高"
+        }
+      },
+      "megapixels": {
+        "name": "百万像素",
+        "tooltip": "目标总像素，按 1024 × 1024 为 1.0 MP 计算。自定义宽高模式下忽略此参数。"
+      },
+      "multiple": {
+        "name": "倍数",
+        "tooltip": "预设宽高比计算完成后，把宽和高取为该值的整数倍。自定义宽高模式下忽略此参数。"
+      },
+      "width": {
+        "name": "宽度",
+        "tooltip": "自定义输出宽度，单位 px。该值原样输出，不取整、不对齐。仅在选择“自定义宽高”时显示和生效。"
+      },
+      "height": {
+        "name": "高度",
+        "tooltip": "自定义输出高度，单位 px。该值原样输出，不取整、不对齐。仅在选择“自定义宽高”时显示和生效。"
+      },
+      "batch_size": {
+        "name": "批次大小",
+        "tooltip": "Latent 批次大小。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Latent",
+        "tooltip": "按最终宽高创建的空 Latent，可直接连接 KSampler。"
+      },
+      "1": {
+        "name": "宽度",
+        "tooltip": "最终输出宽度。"
+      },
+      "2": {
+        "name": "高度",
+        "tooltip": "最终输出高度。"
+      }
+    }
+  }
+}

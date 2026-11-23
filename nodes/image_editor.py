@@ -30,13 +30,13 @@ from .qwen21 import (
 TARGET_RESOLUTION_MIN = MIN_RESOLUTION
 TARGET_RESOLUTION_MAX = 4096
 SCALE_TYPE_OPTIONS = [
-    "无",
-    "按分辨率",
-    "按图像比例",
-    "按目标宽度",
-    "按目标高度",
+    "None",
+    "By Resolution",
+    "By Image Scale",
+    "By Target Width",
+    "By Target Height",
 ]
-EDGE_MODE_OPTIONS = ["拉伸", "居中裁剪", "填充 / 边缘填充"]
+EDGE_MODE_OPTIONS = ["Stretch", "Center Crop", "Pad / Edge Fill"]
 
 _SCALE_TYPE_ALIASES = {
     "无": "none",
@@ -44,16 +44,20 @@ _SCALE_TYPE_ALIASES = {
     "按分辨率": "resolution",
     "分辨率": "resolution",
     "resolution": "resolution",
+    "by resolution": "resolution",
     "按图像比例": "scale",
     "图像比例": "scale",
     "比例": "scale",
     "scale": "scale",
+    "by image scale": "scale",
     "按目标宽度": "width",
     "目标宽度": "width",
     "width": "width",
+    "by target width": "width",
     "按目标高度": "height",
     "目标高度": "height",
     "height": "height",
+    "by target height": "height",
 }
 
 _EDGE_MODE_ALIASES = {
@@ -62,19 +66,21 @@ _EDGE_MODE_ALIASES = {
     "居中裁剪": "crop",
     "中心裁剪": "crop",
     "crop": "crop",
+    "center crop": "crop",
     "center_crop": "crop",
     "填充 / 边缘填充": "pad",
     "填充/边缘填充": "pad",
     "填充": "pad",
     "边缘填充": "pad",
     "pad": "pad",
+    "pad / edge fill": "pad",
 }
 
 
 def _normalize_choice(value: str, aliases: dict[str, str], kind: str) -> str:
     normalized = aliases.get(str(value).strip().lower())
     if normalized is None:
-        raise ValueError(f"未知{kind}：{value}")
+        raise ValueError(f"Unknown {kind}: {value}")
     return normalized
 
 
@@ -121,7 +127,7 @@ def _calculate_target_size(
     alignment_factor: int,
 ) -> tuple[int, int]:
     """Calculate the aligned target size without touching image data."""
-    kind = _normalize_choice(scale_type, _SCALE_TYPE_ALIASES, "缩放类型")
+    kind = _normalize_choice(scale_type, _SCALE_TYPE_ALIASES, "scale type")
     if kind == "none":
         return width, height
 
@@ -130,17 +136,17 @@ def _calculate_target_size(
         return width, height
     if kind == "scale":
         if target_scale <= 0:
-            raise ValueError("缩放倍率必须大于 0")
+            raise ValueError("Scale factor must be greater than 0")
         ideal_width = width * target_scale
         ideal_height = height * target_scale
     elif kind == "width":
         if target_width < 1:
-            raise ValueError("目标宽度必须大于 0")
+            raise ValueError("Target width must be greater than 0")
         ideal_width = float(target_width)
         ideal_height = target_width / ratio
     else:
         if target_height < 1:
-            raise ValueError("目标高度必须大于 0")
+            raise ValueError("Target height must be greater than 0")
         ideal_height = float(target_height)
         ideal_width = target_height * ratio
 
@@ -163,7 +169,7 @@ def _calculate_final_target_size(
     tol_ratio: float,
 ) -> tuple[int, int, int]:
     """Resolve the displayed dimensions and the Qwen resolution bucket."""
-    kind = _normalize_choice(scale_type, _SCALE_TYPE_ALIASES, "缩放类型")
+    kind = _normalize_choice(scale_type, _SCALE_TYPE_ALIASES, "scale type")
     if kind == "none":
         return width, height, _auto_resolution(width, height)
     if kind == "resolution":
@@ -174,9 +180,9 @@ def _calculate_final_target_size(
             or resolution % BLOCK_SIZE
         ):
             raise ValueError(
-                f"resolution 必须是 {TARGET_RESOLUTION_MIN}–"
-                f"{TARGET_RESOLUTION_MAX} 之间、"
-                f"{BLOCK_SIZE} 的正整数倍"
+                f"resolution must be between {TARGET_RESOLUTION_MIN}–"
+                f"{TARGET_RESOLUTION_MAX} and a positive multiple of "
+                f"{BLOCK_SIZE}"
             )
         fixed = pick_qwen21_fixed_point(
             width,
@@ -239,7 +245,7 @@ def _load_image_file(image_file: str) -> tuple[torch.Tensor, torch.Tensor, str]:
         source.close()
 
     if not images:
-        raise ValueError(f"图片没有可读取的帧：{image_path}")
+        raise ValueError(f"Image has no readable frames: {image_path}")
 
     return torch.cat(images, dim=0), torch.cat(masks, dim=0), image_path
 
@@ -319,7 +325,7 @@ def _resize_to_target(
     edge_mode: str,
     pad_color: tuple[int, int, int],
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    kind = _normalize_choice(edge_mode, _EDGE_MODE_ALIASES, "缩放模式")
+    kind = _normalize_choice(edge_mode, _EDGE_MODE_ALIASES, "resize mode")
     if kind in ("stretch", "crop"):
         crop = "center" if kind == "crop" else "disabled"
         image = comfy.utils.common_upscale(
@@ -458,93 +464,94 @@ class XMAstralImageLoadEditor(io.ComfyNode):
 
         return io.Schema(
             node_id="ImageLoadEditor",
-            display_name="加载图像与编辑",
+            display_name="Load Image & Edit",
             category="Image Astral",
             description=(
-                "上传并预览图片，可裁剪和旋转；支持按分辨率、倍率、"
-                "宽度或高度缩放，以及对齐、裁切和补边。"
-                "作者：xm（ComfyUI-Astral-Image），禁止移除本署名。"
+                "Upload and preview an image, then crop and rotate it; supports "
+                "resizing by resolution, scale factor, width, or height, plus "
+                "alignment, cropping, and padding. "
+                "Author: xm (ComfyUI-Astral-Image), do not remove this attribution."
             ),
             search_aliases=[
                 "image load edit",
                 "image editor",
                 "crop rotate",
-                "图像编辑",
-                "图像加载",
-                "裁剪旋转",
+                "image editing",
+                "image loading",
+                "crop and rotate",
             ],
             inputs=[
                 io.Combo.Input(
                     "image_file",
-                    display_name="加载图像",
+                    display_name="Load Image",
                     options=image_files,
                     default=image_files[0] if image_files else None,
                     upload=io.UploadType.image,
                     image_folder=io.FolderType.input,
-                    tooltip="从 ComfyUI input 目录选择或上传图片。",
+                    tooltip="Choose or upload an image from the ComfyUI input directory.",
                 ),
                 io.Combo.Input(
                     "scale_type",
-                    display_name="缩放",
+                    display_name="Scale",
                     options=SCALE_TYPE_OPTIONS,
-                    default="无",
-                    tooltip="选择缩放依据；下方只显示当前类型对应的目标值。",
+                    default="None",
+                    tooltip="Choose the resize basis; only the target value for the current type is shown below.",
                 ),
                 io.Int.Input(
                     "target_resolution",
-                    display_name="分辨率",
+                    display_name="Resolution",
                     default=1024,
                     min=TARGET_RESOLUTION_MIN,
                     max=TARGET_RESOLUTION_MAX,
                     step=BLOCK_SIZE,
                     tooltip=(
-                        "直接输入 Qwen-Image 2.1 的 resolution 档位，"
-                        f"范围 {TARGET_RESOLUTION_MIN}–{TARGET_RESOLUTION_MAX}，"
-                        f"步进 {BLOCK_SIZE}。"
+                        "Enter the Qwen-Image 2.1 resolution bucket directly; "
+                        f"range {TARGET_RESOLUTION_MIN}–{TARGET_RESOLUTION_MAX}, "
+                        f"step {BLOCK_SIZE}."
                     ),
                 ),
                 io.Float.Input(
                     "target_scale",
-                    display_name="缩放目标值",
+                    display_name="Target Value",
                     default=1.0,
                     min=0.01,
                     max=16.0,
                     step=0.01,
-                    tooltip="宽高同时缩放的倍率，例如 1.5 表示放大到 150%。",
+                    tooltip="Scale factor applied to both width and height, e.g. 1.5 means 150%.",
                 ),
                 io.Int.Input(
                     "target_width",
-                    display_name="缩放目标值",
+                    display_name="Target Value",
                     default=1024,
                     min=1,
                     max=65_536,
                     step=1,
-                    tooltip="目标宽度，高度按原图宽高比自动计算。",
+                    tooltip="Target width; height is calculated from the source aspect ratio.",
                 ),
                 io.Int.Input(
                     "target_height",
-                    display_name="缩放目标值",
+                    display_name="Target Value",
                     default=1024,
                     min=1,
                     max=65_536,
                     step=1,
-                    tooltip="目标高度，宽度按原图宽高比自动计算。",
+                    tooltip="Target height; width is calculated from the source aspect ratio.",
                 ),
                 io.Combo.Input(
                     "upscale_method",
-                    display_name="缩放算法",
+                    display_name="Upscale Method",
                     options=UPSCALE_METHODS,
                     default="lanczos",
-                    tooltip="nearest-exact / bilinear / area / bicubic / lanczos。",
+                    tooltip="nearest-exact / bilinear / area / bicubic / lanczos.",
                 ),
                 io.Int.Input(
                     "alignment_factor",
-                    display_name="对齐因数",
+                    display_name="Alignment Factor",
                     default=32,
                     min=1,
                     max=256,
                     step=1,
-                    tooltip="最终宽高取该值的整数倍；1 表示不对齐。",
+                    tooltip="Final width and height are rounded to a multiple of this value; 1 disables alignment.",
                 ),
                 io.Float.Input(
                     "tol_ratio",
@@ -554,55 +561,56 @@ class XMAstralImageLoadEditor(io.ComfyNode):
                     max=3.0,
                     step=0.1,
                     tooltip=(
-                        "仅缩放时生效。在 resolution 面积桶附近搜索候选尺寸；"
-                        "值越大允许的面积偏差越大，默认 0.8。"
+                        "Only applies when scaling. Searches for candidate sizes near "
+                        "the resolution area bucket; larger values allow a bigger area "
+                        "deviation, default 0.8."
                     ),
                 ),
                 io.Combo.Input(
                     "edge_mode",
-                    display_name="缩放模式",
+                    display_name="Resize Mode",
                     options=EDGE_MODE_OPTIONS,
-                    default="拉伸",
-                    tooltip="处理对齐后产生的多余或残缺像素。",
+                    default="Stretch",
+                    tooltip="Handles extra or missing pixels produced by alignment.",
                 ),
                 io.String.Input(
                     "pad_color",
-                    display_name="填充颜色",
+                    display_name="Pad Color",
                     default="0,0,0",
-                    tooltip="仅填充模式使用；默认 0,0,0，也支持 #RRGGBB 和颜色名。",
+                    tooltip="Only used in pad mode; default 0,0,0, also accepts #RRGGBB and color names.",
                 ),
                 io.String.Input(
                     "mask_color",
-                    display_name="遮罩颜色",
+                    display_name="Mask Color",
                     default="0,0,0",
-                    tooltip="遮罩图像输出中遮罩区域使用的 RGB 颜色。",
+                    tooltip="RGB color used for masked areas in the mask image output.",
                 ),
                 io.Boolean.Input(
                     "fill_mask_holes",
-                    display_name="填充遮罩漏洞",
+                    display_name="Fill Mask Holes",
                     default=False,
-                    tooltip="填充没有连接到画面边缘的遮罩内部空洞。",
+                    tooltip="Fill mask holes that are not connected to the image border.",
                 ),
                 io.Boolean.Input(
                     "bevel_mask",
-                    display_name="遮罩倒角",
+                    display_name="Bevel Mask",
                     default=False,
-                    tooltip="对遮罩边缘做 1 像素柔和过渡。",
+                    tooltip="Apply a 1-pixel soft transition to mask edges.",
                 ),
                 io.Boolean.Input(
                     "invert_mask",
-                    display_name="反转遮罩",
+                    display_name="Invert Mask",
                     default=False,
-                    tooltip="交换遮罩的选中和未选中区域。",
+                    tooltip="Swap the selected and unselected areas of the mask.",
                 ),
                 io.Int.Input(
                     "mask_grow",
-                    display_name="遮罩扩展生长",
+                    display_name="Mask Grow",
                     default=0,
                     min=-256,
                     max=256,
                     step=1,
-                    tooltip="正数扩展遮罩，负数收缩遮罩，0 表示不改变。",
+                    tooltip="Positive values expand the mask, negative values shrink it, 0 leaves it unchanged.",
                 ),
             ],
             outputs=[
@@ -613,7 +621,7 @@ class XMAstralImageLoadEditor(io.ComfyNode):
                 io.Int.Output(display_name="height"),
                 io.Int.Output(
                     display_name="resolution",
-                    tooltip="按最终尺寸自动解析的 Qwen resolution 档位。",
+                    tooltip="Qwen resolution bucket resolved from the final size.",
                 ),
             ],
         )
@@ -622,7 +630,7 @@ class XMAstralImageLoadEditor(io.ComfyNode):
     def execute(
         cls,
         image_file: str,
-        scale_type: str = "无",
+        scale_type: str = "None",
         target_resolution: int = 1024,
         target_scale: float = 1.0,
         target_width: int = 1024,
@@ -630,7 +638,7 @@ class XMAstralImageLoadEditor(io.ComfyNode):
         upscale_method: str = "lanczos",
         alignment_factor: int = 32,
         tol_ratio: float = 0.8,
-        edge_mode: str = "拉伸",
+        edge_mode: str = "Stretch",
         pad_color: str = "0,0,0",
         mask_color: str = "0,0,0",
         fill_mask_holes: bool = False,
@@ -639,13 +647,13 @@ class XMAstralImageLoadEditor(io.ComfyNode):
         mask_grow: int = 0,
     ) -> io.NodeOutput:
         if not image_file:
-            raise ValueError("请先选择或上传图片")
+            raise ValueError("Select or upload an image first")
         if upscale_method not in UPSCALE_METHODS:
-            raise ValueError(f"未知缩放算法：{upscale_method}")
+            raise ValueError(f"Unknown upscale method: {upscale_method}")
         if alignment_factor < 1:
-            raise ValueError("对齐因数必须大于等于 1")
+            raise ValueError("Alignment factor must be at least 1")
         if not math.isfinite(tol_ratio) or tol_ratio <= 0:
-            raise ValueError("tol_ratio 必须大于 0")
+            raise ValueError("tol_ratio must be greater than 0")
 
         image, mask, _ = _load_image_file(image_file)
         original_height, original_width = image.shape[1], image.shape[2]
@@ -664,7 +672,7 @@ class XMAstralImageLoadEditor(io.ComfyNode):
         normalized_scale_type = _normalize_choice(
             scale_type,
             _SCALE_TYPE_ALIASES,
-            "缩放类型",
+            "scale type",
         )
         if normalized_scale_type != "none":
             parsed_pad_color = _parse_background_color(pad_color) or (0, 0, 0)
@@ -692,16 +700,16 @@ class XMAstralImageLoadEditor(io.ComfyNode):
     @classmethod
     def validate_inputs(cls, image_file=None, **kwargs) -> bool | str:
         if not image_file:
-            return "请先选择或上传图片"
+            return "Select or upload an image first"
         if not folder_paths.exists_annotated_filepath(image_file):
-            return f"找不到图片文件：{image_file}"
+            return f"Image file not found: {image_file}"
         return True
 
     @classmethod
     def fingerprint_inputs(
         cls,
         image_file=None,
-        scale_type="无",
+        scale_type="None",
         target_resolution=1024,
         target_scale=1.0,
         target_width=1024,
@@ -709,7 +717,7 @@ class XMAstralImageLoadEditor(io.ComfyNode):
         upscale_method="lanczos",
         alignment_factor=32,
         tol_ratio=0.8,
-        edge_mode="拉伸",
+        edge_mode="Stretch",
         pad_color="0,0,0",
         mask_color="0,0,0",
         fill_mask_holes=False,

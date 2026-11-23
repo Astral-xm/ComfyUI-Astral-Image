@@ -24,6 +24,25 @@ MAX_RESOLUTION = 2048
 UPSCALE_METHODS = ["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]
 RESIZE_MODE_OPTIONS = ["stretch", "crop", "pad"]
 MASK_CHANNEL_OPTIONS = ["alpha", "red", "green", "blue"]
+# Legacy Chinese values saved in older workflows keep resolving to the same option.
+_RESIZE_MODE_ALIASES = {
+    "拉伸": "stretch",
+    "居中裁剪": "crop",
+    "中心裁剪": "crop",
+    "填充": "pad",
+    "边缘填充": "pad",
+    "补边": "pad",
+}
+_MASK_CHANNEL_ALIASES = {
+    "透明": "alpha",
+    "透明度": "alpha",
+    "红": "red",
+    "红色": "red",
+    "绿": "green",
+    "绿色": "green",
+    "蓝": "blue",
+    "蓝色": "blue",
+}
 RESOLUTION_OPTIONS = ["default"] + [
     str(value) for value in range(MIN_RESOLUTION, MAX_RESOLUTION + 1, BLOCK_SIZE)
 ]
@@ -67,6 +86,11 @@ def _auto_resolution(width: int, height: int) -> int:
 
 def _log_ratio_distance(a: float, b: float) -> float:
     return abs(math.log(a / b))
+
+
+def _normalize_option(value: str, aliases: dict[str, str]) -> str:
+    text = str(value).strip()
+    return aliases.get(text.lower(), text)
 
 
 @lru_cache(maxsize=128)
@@ -127,9 +151,9 @@ def pick_qwen21_fixed_point(
 ) -> FixedPoint:
     """Choose a target size that the Qwen text encoder will not resize again."""
     if width < 1 or height < 1:
-        raise ValueError("宽高必须大于 0")
+        raise ValueError("Width and height must be greater than 0")
     if not math.isfinite(tol_ratio) or tol_ratio <= 0:
-        raise ValueError("tol_ratio 必须大于 0")
+        raise ValueError("tol_ratio must be greater than 0")
     block_size = max(1, int(block_size))
     resolved_resolution = (
         _auto_resolution(width, height)
@@ -137,7 +161,7 @@ def pick_qwen21_fixed_point(
         else int(resolution)
     )
     if resolved_resolution < BLOCK_SIZE or resolved_resolution % BLOCK_SIZE:
-        raise ValueError("resolution 必须是 32 的正整数倍数")
+        raise ValueError("resolution must be a positive multiple of 32")
 
     cells = resolved_resolution // BLOCK_SIZE
     tolerance = max(1, int(cells * tol_ratio))
@@ -145,7 +169,7 @@ def pick_qwen21_fixed_point(
     if not candidates:
         raise ValueError(
             f"resolution={resolved_resolution}, tol_ratio={tol_ratio:g}, "
-            f"alignment_factor={block_size} 找不到候选尺寸"
+            f"alignment_factor={block_size}: no candidate sizes found"
         )
     input_ratio = width / height
 
@@ -178,7 +202,7 @@ def pick_qwen21_fixed_point(
             == candidate[:2]
         ]
         if not fixed_candidates:
-            raise ValueError(f"resolution={resolved_resolution} 找不到不动点尺寸")
+            raise ValueError(f"resolution={resolved_resolution}: no fixed-point size found")
         target_width, target_height, _ = min(
             fixed_candidates,
             key=lambda candidate: _log_ratio_distance(
@@ -205,7 +229,7 @@ def _parse_background_color(value: str) -> tuple[int, int, int] | None:
     try:
         return ImageColor.getrgb(value)[:3]
     except ValueError as error:
-        raise ValueError(f"无法识别背景色 {value!r}，请使用 #RRGGBB、颜色名或 R,G,B") from error
+        raise ValueError(f"Unrecognized background color {value!r}; use #RRGGBB, a color name, or R,G,B") from error
 
 
 def _frame_mask(frame: Image.Image, mask_channel: str) -> torch.Tensor:
@@ -245,7 +269,7 @@ def _load_image_file(
         masks.append(mask.unsqueeze(0))
 
     if not images:
-        raise ValueError(f"图片没有可读取的帧：{image_path}")
+        raise ValueError(f"Image has no readable frames: {image_path}")
 
     image = torch.cat(images, dim=0)
     mask = torch.cat(masks, dim=0)
@@ -258,7 +282,7 @@ def _prepare_connected_image(
     background_color: str,
 ) -> tuple[torch.Tensor, torch.Tensor, str]:
     if image.ndim != 4:
-        raise ValueError("IMAGE 必须是 [batch, height, width, channels] 张量")
+        raise ValueError("IMAGE must be a [batch, height, width, channels] tensor")
 
     source_mask = mask
     if source_mask is None and image.shape[-1] >= 4:
@@ -397,10 +421,10 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
 
         return io.Schema(
             node_id="XMAstralQwen21LoadResize",
-            display_name="Image Astral · Qwen 2.1 零偏移加载",
+            display_name="Image Astral · Qwen 2.1 Zero-Offset Load",
             category="Image Astral/Qwen",
-            description="加载图片并对齐到 Qwen 2.1 的不动点尺寸；支持预放大、拉伸/裁切/补边和插值算法选择。作者：xm（ComfyUI-Astral-Image），禁止移除本署名。",
-            search_aliases=["qwen zero offset", "qwen 2.1 load resize", "零偏移图像", "qwen fixed point"],
+            description="Load an image and align it to Qwen 2.1 fixed-point sizes; supports pre-upscaling, stretch/crop/pad, and interpolation method selection. Author: xm (ComfyUI-Astral-Image), do not remove this attribution.",
+            search_aliases=["qwen zero offset", "qwen 2.1 load resize", "zero offset image", "qwen fixed point"],
             inputs=[
                 io.Combo.Input(
                     "image_file",
@@ -410,17 +434,17 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
                     upload=io.UploadType.image,
                     image_folder=io.FolderType.input,
                     optional=True,
-                    tooltip="从 ComfyUI input 目录选择或上传图片；连接下方 IMAGE 端口时优先使用端口。",
+                    tooltip="Choose or upload an image from the ComfyUI input directory; when the IMAGE input below is connected, it takes priority.",
                 ),
                 io.Image.Input(
                     "image",
                     optional=True,
-                    tooltip="可选 IMAGE 输入；连接后忽略 image_file。",
+                    tooltip="Optional IMAGE input; when connected, image_file is ignored.",
                 ),
                 io.Mask.Input(
                     "mask",
                     optional=True,
-                    tooltip="可选 MASK 输入；未连接时从图片 Alpha 或所选通道读取。",
+                    tooltip="Optional MASK input; when disconnected, it is read from the image alpha or the selected channel.",
                 ),
                 io.Float.Input(
                     "input_scale",
@@ -429,25 +453,25 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
                     min=0.01,
                     max=8.0,
                     step=0.01,
-                    tooltip="固定网格处理前先按此倍率缩放，用于小图零变形放大。",
+                    tooltip="Scale by this factor before fixed-grid processing, for zero-distortion upscaling of small images.",
                 ),
                 io.Combo.Input(
                     "resolution",
                     options=RESOLUTION_OPTIONS,
                     default="default",
-                    tooltip="default 根据输入面积自动选择；也可手动指定 512-2048。",
+                    tooltip="default selects automatically from the input area; you can also specify 512-2048 manually.",
                 ),
                 io.Combo.Input(
                     "resize_mode",
                     options=RESIZE_MODE_OPTIONS,
                     default="stretch",
-                    tooltip="stretch 可逆且适合 V2 流程；crop 居中裁切；pad 居中补边。",
+                    tooltip="stretch is reversible and suits V2 workflows; crop center-crops; pad center-pads.",
                 ),
                 io.Combo.Input(
                     "upscale_method",
                     options=UPSCALE_METHODS,
                     default="lanczos",
-                    tooltip="预放大和对齐固定网格时使用的插值算法。",
+                    tooltip="Interpolation method used for pre-upscaling and aligning to the fixed grid.",
                 ),
                 io.Int.Input(
                     "repeat",
@@ -455,18 +479,18 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
                     min=1,
                     max=4096,
                     step=1,
-                    tooltip="对对齐后的图像和遮罩做批次复制。",
+                    tooltip="Repeat the aligned image and mask across the batch.",
                 ),
                 io.Combo.Input(
                     "mask_channel",
                     options=MASK_CHANNEL_OPTIONS,
                     default="alpha",
-                    tooltip="从图片读取哪个通道作为遮罩。",
+                    tooltip="Which channel of the image to read as the mask.",
                 ),
                 io.String.Input(
                     "background_color",
                     default="",
-                    tooltip="可填 #RRGGBB、颜色名或 R,G,B，用于 Alpha 合成；留空保持原样。",
+                    tooltip="Accepts #RRGGBB, a color name, or R,G,B for alpha compositing; leave empty to keep as is.",
                 ),
                 io.Float.Input(
                     "tol_ratio",
@@ -475,7 +499,7 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
                     max=3.0,
                     step=0.1,
                     advanced=True,
-                    tooltip="不动点尺寸搜索的面积容差。",
+                    tooltip="Area tolerance for the fixed-point size search.",
                 ),
                 io.Float.Input(
                     "pad_color",
@@ -484,17 +508,17 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
                     max=1.0,
                     step=0.01,
                     advanced=True,
-                    tooltip="resize_mode=pad 时的补边灰度值。",
+                    tooltip="Padding gray level used when resize_mode=pad.",
                 ),
             ],
             outputs=[
                 io.Image.Output(display_name="image"),
                 io.Mask.Output(display_name="mask"),
-                io.Int.Output(display_name="width", tooltip="送入 Qwen 的固定网格宽度。"),
-                io.Int.Output(display_name="height", tooltip="送入 Qwen 的固定网格高度。"),
-                io.Int.Output(display_name="resolution", tooltip="连接到 TextEncodeQwenImage21.resolution。"),
-                io.Int.Output(display_name="restore_width", tooltip="生成后恢复到的宽度。"),
-                io.Int.Output(display_name="restore_height", tooltip="生成后恢复到的高度。"),
+                io.Int.Output(display_name="width", tooltip="Fixed-grid width passed to Qwen."),
+                io.Int.Output(display_name="height", tooltip="Fixed-grid height passed to Qwen."),
+                io.Int.Output(display_name="resolution", tooltip="Connect to TextEncodeQwenImage21.resolution."),
+                io.Int.Output(display_name="restore_width", tooltip="Width to restore to after generation."),
+                io.Int.Output(display_name="restore_height", tooltip="Height to restore to after generation."),
                 io.String.Output(display_name="image_path"),
             ],
         )
@@ -517,10 +541,10 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
     ) -> io.NodeOutput:
         if image is None:
             if not image_file:
-                raise ValueError("请选择图片或连接 IMAGE 输入")
+                raise ValueError("Select an image or connect the IMAGE input")
             image, mask, image_path = _load_image_file(
                 image_file,
-                mask_channel,
+                _normalize_option(mask_channel, _MASK_CHANNEL_ALIASES),
                 background_color,
             )
         else:
@@ -531,11 +555,12 @@ class XMAstralQwen21LoadResize(io.ComfyNode):
             )
 
         if not 0.01 <= input_scale <= 8.0:
-            raise ValueError("input_scale 必须在 0.01 到 8.0 之间")
+            raise ValueError("input_scale must be between 0.01 and 8.0")
+        resize_mode = _normalize_option(resize_mode, _RESIZE_MODE_ALIASES)
         if resize_mode not in RESIZE_MODE_OPTIONS:
-            raise ValueError(f"未知 resize_mode：{resize_mode}")
+            raise ValueError(f"Unknown resize_mode: {resize_mode}")
         if upscale_method not in UPSCALE_METHODS:
-            raise ValueError(f"未知 upscale_method：{upscale_method}")
+            raise ValueError(f"Unknown upscale_method: {upscale_method}")
 
         source_height, source_width = image.shape[1], image.shape[2]
         restore_width = max(1, round(source_width * input_scale))
@@ -589,10 +614,10 @@ class XMAstralRestoreImageSize(io.ComfyNode):
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="RestoreImageSize",
-            display_name="Image Astral · 恢复图像尺寸",
+            display_name="Image Astral · Restore Image Size",
             category="Image Astral/Qwen",
-            description="把 Qwen 固定网格生成结果按指定宽高还原，默认使用 lanczos。作者：xm（ComfyUI-Astral-Image），禁止移除本署名。",
-            search_aliases=["restore image size", "scale back", "恢复尺寸", "还原图像"],
+            description="Restore a Qwen fixed-grid result to the specified width and height, using lanczos by default. Author: xm (ComfyUI-Astral-Image), do not remove this attribution.",
+            search_aliases=["restore image size", "scale back", "restore size", "restore image"],
             inputs=[
                 io.Image.Input("image"),
                 io.Int.Input("width", default=512, min=1, max=65536, step=1),
@@ -601,7 +626,7 @@ class XMAstralRestoreImageSize(io.ComfyNode):
                     "upscale_method",
                     options=UPSCALE_METHODS,
                     default="lanczos",
-                    tooltip="恢复原始宽高时使用的插值算法。",
+                    tooltip="Interpolation method used when restoring the original width and height.",
                 ),
             ],
             outputs=[
@@ -620,9 +645,9 @@ class XMAstralRestoreImageSize(io.ComfyNode):
         upscale_method: str = "lanczos",
     ) -> io.NodeOutput:
         if width < 1 or height < 1:
-            raise ValueError("恢复尺寸必须大于 0")
+            raise ValueError("Restore width and height must be greater than 0")
         if upscale_method not in UPSCALE_METHODS:
-            raise ValueError(f"未知 upscale_method：{upscale_method}")
+            raise ValueError(f"Unknown upscale_method: {upscale_method}")
         if image.shape[1] == height and image.shape[2] == width:
             restored = image
         else:

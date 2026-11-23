@@ -18,10 +18,10 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ImageLoadEditor": "加载图像与编辑",
-    "RestoreImageSize": "Image Astral · 恢复图像尺寸",
+    "ImageLoadEditor": "Load Image & Edit",
+    "RestoreImageSize": "Image Astral · Restore Image Size",
     "ResolutionSelectLatent": "ResolutionSelectLatent",
-    "XMAstralImageLoadEditor": "加载图像与编辑",
-    "XMAstralRestoreImageSize": "Image Astral · 恢复图像尺寸",
+    "XMAstralImageLoadEditor": "Load Image & Edit",
+    "XMAstralRestoreImageSize": "Image Astral · Restore Image Size",
     "XMAstralResolutionSelector": "ResolutionSelectLatent",
 }

@@ -23,8 +23,14 @@ ASPECT_RATIOS = {
     "16:9 (Widescreen)": (16, 9),
     "21:9 (Ultrawide)": (21, 9),
 }
-CUSTOM_SIZE_MODE = "自定义宽高"
+CUSTOM_SIZE_MODE = "Custom Size"
+# Older workflows saved the Chinese label as the combo value.
+_LEGACY_CUSTOM_SIZE_MODES = {"custom size", "自定义宽高"}
 ASPECT_RATIO_OPTIONS = [*ASPECT_RATIOS, CUSTOM_SIZE_MODE]
+
+
+def _is_custom_size_mode(value: str) -> bool:
+    return str(value).strip().lower() in _LEGACY_CUSTOM_SIZE_MODES
 
 
 class XMAstralResolutionSelector(io.ComfyNode):
@@ -35,100 +41,102 @@ class XMAstralResolutionSelector(io.ComfyNode):
         return io.Schema(
             node_id="ResolutionSelectLatent",
             display_name="ResolutionSelectLatent",
-            category="Image Astral/尺寸",
+            category="Image Astral/Size",
             description=(
-                "按宽高比和百万像素计算输出尺寸，并按倍数对齐；"
-                "也可手动指定宽高并创建空 Latent。"
-                "作者：xm（ComfyUI-Astral-Image），禁止移除本署名。"
+                "Calculate output size from aspect ratio and megapixels, aligned "
+                "to a multiple; or specify width and height manually and create "
+                "an empty latent. "
+                "Author: xm (ComfyUI-Astral-Image), do not remove this attribution."
             ),
             search_aliases=[
                 "ResolutionSelectLatent",
                 "resolution selector",
                 "custom image size",
-                "自定义图像尺寸",
-                "空 Latent",
+                "custom image dimensions",
+                "empty latent",
             ],
             inputs=[
                 io.Combo.Input(
                     "aspect_ratio",
-                    display_name="宽高比",
+                    display_name="Aspect Ratio",
                     options=ASPECT_RATIO_OPTIONS,
                     default="16:9 (Widescreen)",
                     tooltip=(
-                        "选择预设宽高比；选择“自定义宽高”后直接使用下方的宽度和高度，"
-                        "不再应用百万像素与倍数。"
+                        "Choose a preset aspect ratio; after selecting \"Custom Size\", "
+                        "the width and height below are used directly and megapixels "
+                        "and multiple are ignored."
                     ),
                 ),
                 io.Float.Input(
                     "megapixels",
-                    display_name="百万像素",
+                    display_name="Megapixels",
                     default=2.0,
                     min=0.1,
                     max=16.0,
                     step=0.1,
                     tooltip=(
-                        "目标总像素，按 1024 × 1024 为 1.0 MP 计算。"
-                        "自定义宽高模式下忽略此参数。"
+                        "Target total pixels, where 1024 × 1024 equals 1.0 MP. "
+                        "Ignored in Custom Size mode."
                     ),
                 ),
                 io.Int.Input(
                     "multiple",
-                    display_name="倍数",
+                    display_name="Multiple",
                     default=32,
                     min=1,
                     max=256,
                     step=1,
                     tooltip=(
-                        "预设宽高比计算完成后，把宽和高取为该值的整数倍。"
-                        "自定义宽高模式下忽略此参数。"
+                        "After preset aspect-ratio calculation, round width and height "
+                        "to a multiple of this value. Ignored in Custom Size mode."
                     ),
                 ),
                 io.Int.Input(
                     "width",
-                    display_name="宽度",
+                    display_name="Width",
                     default=1024,
                     min=VAE_SCALE,
                     max=MAX_IMAGE_EDGE,
                     step=1,
                     tooltip=(
-                        "自定义输出宽度，单位 px。该值原样输出，不取整、不对齐。"
-                        "仅在选择“自定义宽高”时显示和生效。"
+                        "Custom output width in px. Used as-is, without rounding or "
+                        "alignment. Only shown and applied when Custom Size is selected."
                     ),
                 ),
                 io.Int.Input(
                     "height",
-                    display_name="高度",
+                    display_name="Height",
                     default=1024,
                     min=VAE_SCALE,
                     max=MAX_IMAGE_EDGE,
                     step=1,
                     tooltip=(
-                        "自定义输出高度，单位 px。该值原样输出，不取整、不对齐。"
-                        "仅在选择“自定义宽高”时显示和生效。"
+                        "Custom output height in px. Used as-is, without rounding or "
+                        "alignment. Only shown and applied when Custom Size is selected."
                     ),
                 ),
                 io.Int.Input(
                     "batch_size",
-                    display_name="批次大小",
+                    display_name="Batch Size",
                     default=1,
                     min=1,
                     max=4096,
                     step=1,
-                    tooltip="Latent 批次大小。",
+                    tooltip="Latent batch size.",
                 ),
             ],
             outputs=[
                 io.Latent.Output(
                     display_name="Latent",
-                    tooltip="按最终宽高创建的空 Latent，可直接连接 KSampler。",
+                    tooltip="Empty latent created at the final width and height, ready to connect to KSampler.",
                 ),
                 io.Int.Output(
-                    display_name="宽度",
-                    tooltip="最终输出宽度。",
+                    display_name="Width",
+                    tooltip="Final output width.",
                 ),
                 io.Int.Output(
-                    display_name="高度",
-                    tooltip="最终输出高度。",
+                    display_name="Height",
+                    tooltip="Final output height.",
                 ),
             ],
         )
@@ -144,21 +152,21 @@ class XMAstralResolutionSelector(io.ComfyNode):
         batch_size: int,
     ) -> io.NodeOutput:
         if batch_size < 1:
-            raise ValueError("批次大小必须大于 0")
+            raise ValueError("Batch size must be greater than 0")
 
-        if aspect_ratio == CUSTOM_SIZE_MODE:
+        if _is_custom_size_mode(aspect_ratio):
             final_width = int(width)
             final_height = int(height)
             if final_width < 1 or final_height < 1:
-                raise ValueError("宽度和高度必须大于 0")
+                raise ValueError("Width and height must be greater than 0")
         else:
             ratio = ASPECT_RATIOS.get(aspect_ratio)
             if ratio is None:
-                raise ValueError(f"未知宽高比：{aspect_ratio}")
+                raise ValueError(f"Unknown aspect ratio: {aspect_ratio}")
             if not math.isfinite(megapixels) or megapixels <= 0:
-                raise ValueError("百万像素必须大于 0")
+                raise ValueError("Megapixels must be greater than 0")
             if multiple < 1:
-                raise ValueError("倍数必须大于 0")
+                raise ValueError("Multiple must be greater than 0")
 
             ratio_width, ratio_height = ratio
             total_pixels = float(megapixels) * 1024 * 1024

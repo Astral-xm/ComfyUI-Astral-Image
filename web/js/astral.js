@@ -8,7 +8,8 @@ const LEGACY_NODE_TYPES = Object.freeze({
   XMAstralRestoreImageSize: "RestoreImageSize",
   XMAstralResolutionSelector: RESOLUTION_SELECTOR_NODE_ID,
 });
-const CUSTOM_SIZE_MODE = "自定义宽高";
+const CUSTOM_SIZE_MODE = "Custom Size";
+const LEGACY_CUSTOM_SIZE_MODE = "自定义宽高";
 const TARGET_WIDGETS = [
   "target_resolution",
   "target_scale",
@@ -58,7 +59,39 @@ const MASK_WIDGET_DEFAULTS = {
   mask_grow: 0,
 };
 const TOL_RATIO_TOOLTIP =
-  "仅缩放时生效。在 resolution 面积桶附近搜索候选尺寸；值越大允许的面积偏差越大，默认 0.8。";
+  "Only applies when scaling. Searches for candidate sizes near the resolution area bucket; larger values allow a bigger area deviation, default 0.8.";
+
+const LEGACY_SCALE_TYPE_VALUES = {
+  "无": "None",
+  "按分辨率": "By Resolution",
+  "按图像比例": "By Image Scale",
+  "按目标宽度": "By Target Width",
+  "按目标高度": "By Target Height",
+  "按像素数量": "By Resolution",
+};
+const LEGACY_EDGE_MODE_VALUES = {
+  "拉伸": "Stretch",
+  "居中裁剪": "Center Crop",
+  "填充 / 边缘填充": "Pad / Edge Fill",
+  "stretch": "Stretch",
+  "crop": "Center Crop",
+  "pad": "Pad / Edge Fill",
+};
+
+function normalizeScaleTypeValue(value) {
+  const text = String(value ?? "");
+  return LEGACY_SCALE_TYPE_VALUES[text] || text;
+}
+
+function normalizeEdgeModeValue(value) {
+  const text = String(value ?? "");
+  return LEGACY_EDGE_MODE_VALUES[text] || text;
+}
+
+function isCustomSizeMode(value) {
+  const text = String(value || "").trim();
+  return text === CUSTOM_SIZE_MODE || text === LEGACY_CUSTOM_SIZE_MODE;
+}
 
 function migrateLegacyNodeTypes(graphData) {
   if (!graphData || typeof graphData !== "object") return;
@@ -97,30 +130,30 @@ function hideDuplicateLegacyNodeDefs(nodeDefs) {
 }
 
 const SCALE_META = {
-  "无": {
+  "None": {
     widget: null,
-    label: "缩放目标值",
-    help: "保持原图尺寸。目标值、对齐因数、缩放模式都不会参与运算。",
+    label: "Target Value",
+    help: "Keep the source size. Target value, alignment factor, and resize mode are not used.",
   },
-  "按分辨率": {
+  "By Resolution": {
     widget: "target_resolution",
-    label: "分辨率",
-    help: "范围 512–4096，步进 32。节点会根据原图比例和 tol_ratio 搜索对应的不动点尺寸。",
+    label: "Resolution",
+    help: "Range 512–4096, step 32. The node searches for a matching fixed-point size from the source ratio and tol_ratio.",
   },
-  "按图像比例": {
+  "By Image Scale": {
     widget: "target_scale",
-    label: "缩放目标值（倍率）",
-    help: "宽高同时乘以该倍率。示例：1.5 会把 1000 × 500 变为 1500 × 750；0.5 会缩小到一半。",
+    label: "Target Value (Scale)",
+    help: "Multiply width and height by this factor. Example: 1.5 turns 1000 × 500 into 1500 × 750; 0.5 halves it.",
   },
-  "按目标宽度": {
+  "By Target Width": {
     widget: "target_width",
-    label: "缩放目标值（宽度 px）",
-    help: "填写目标宽度，高度按原图比例自动计算。示例：填写 1024，原图比例 3:2 时高度约为 683。",
+    label: "Target Value (Width px)",
+    help: "Enter the target width; height is calculated from the source ratio. Example: with 1024 and a 3:2 source, height is about 683.",
   },
-  "按目标高度": {
+  "By Target Height": {
     widget: "target_height",
-    label: "缩放目标值（高度 px）",
-    help: "填写目标高度，宽度按原图比例自动计算。示例：填写 1024，原图比例 3:2 时宽度约为 1536。",
+    label: "Target Value (Height px)",
+    help: "Enter the target height; width is calculated from the source ratio. Example: with 1024 and a 3:2 source, width is about 1536.",
   },
 };
 
@@ -293,7 +326,11 @@ function setWidgetHidden(widget, hidden) {
 }
 
 function syncResolutionSelectorWidgets(node) {
-  const customSize = findWidget(node, "aspect_ratio")?.value === CUSTOM_SIZE_MODE;
+  const modeWidget = findWidget(node, "aspect_ratio");
+  if (modeWidget && modeWidget.value === LEGACY_CUSTOM_SIZE_MODE) {
+    setWidgetValue(modeWidget, CUSTOM_SIZE_MODE);
+  }
+  const customSize = isCustomSizeMode(modeWidget?.value);
   setWidgetHidden(findWidget(node, "megapixels"), customSize);
   setWidgetHidden(findWidget(node, "multiple"), customSize);
   setWidgetHidden(findWidget(node, "width"), !customSize);
@@ -432,9 +469,17 @@ function migrateSerializedWidgetValues(node, info) {
     const tolIndex = detectedTolIndex >= 0 ? detectedTolIndex : 8;
     const oldEdgeValue = String(values[tolIndex] ?? "");
     if (
-      ["拉伸", "居中裁剪", "填充 / 边缘填充", "stretch", "crop", "pad"].includes(
-        oldEdgeValue,
-      )
+      [
+        "拉伸",
+        "居中裁剪",
+        "填充 / 边缘填充",
+        "Stretch",
+        "Center Crop",
+        "Pad / Edge Fill",
+        "stretch",
+        "crop",
+        "pad",
+      ].includes(oldEdgeValue)
     ) {
       // Older workflows stored edge_mode at this index. Insert a default before
       // ComfyUI maps the array back onto the newly inserted tol_ratio widget.
@@ -449,11 +494,16 @@ function migrateSerializedWidgetValues(node, info) {
   const resolutionIndex = isArray
     ? node.widgets?.findIndex((widget) => widget.name === "target_resolution") ?? -1
     : -1;
+  const edgeIndex = isArray
+    ? node.widgets?.findIndex((widget) => widget.name === "edge_mode") ?? -1
+    : -1;
   if (isArray) {
     const oldScaleType = String(
       migratedValues[scaleIndex >= 0 ? scaleIndex : 1] ?? "",
     );
+    const normalizedScaleType = normalizeScaleTypeValue(oldScaleType);
     const hasLegacyScale = oldScaleType === "按像素数量";
+    const shouldMigrateScale = normalizedScaleType !== oldScaleType;
     const oldTargetValue =
       resolutionIndex >= 0 ? migratedValues[resolutionIndex] : undefined;
     const shouldMigrateTarget =
@@ -461,34 +511,49 @@ function migrateSerializedWidgetValues(node, info) {
       (oldTargetValue !== undefined &&
         (Number(oldTargetValue) < MIN_QWEN_RESOLUTION ||
           Number(oldTargetValue) > MAX_TARGET_RESOLUTION));
-    if (!hasLegacyScale && !shouldMigrateTarget) {
+    const oldEdgeValue =
+      edgeIndex >= 0 ? String(migratedValues[edgeIndex] ?? "") : "";
+    const normalizedEdgeValue = normalizeEdgeModeValue(oldEdgeValue);
+    const shouldMigrateEdge = normalizedEdgeValue !== oldEdgeValue;
+    if (!shouldMigrateScale && !shouldMigrateTarget && !shouldMigrateEdge) {
       return migratedValues === values
         ? info
         : { ...info, widgets_values: migratedValues };
     }
 
     const converted = [...migratedValues];
-    if (hasLegacyScale) {
-      converted[scaleIndex >= 0 ? scaleIndex : 1] = "按分辨率";
+    if (shouldMigrateScale) {
+      converted[scaleIndex >= 0 ? scaleIndex : 1] = normalizedScaleType;
     }
     if (resolutionIndex >= 0 && shouldMigrateTarget) {
       converted[resolutionIndex] = legacyTargetToResolution(oldTargetValue);
+    }
+    if (edgeIndex >= 0 && shouldMigrateEdge) {
+      converted[edgeIndex] = normalizedEdgeValue;
     }
     return { ...info, widgets_values: converted };
   }
 
   const oldScaleType = String(values.scale_type ?? "");
+  const normalizedScaleType = normalizeScaleTypeValue(oldScaleType);
+  const shouldMigrateScale = normalizedScaleType !== oldScaleType;
+  const oldEdgeValue = String(values.edge_mode ?? "");
+  const normalizedEdgeValue = normalizeEdgeModeValue(oldEdgeValue);
+  const shouldMigrateEdge = normalizedEdgeValue !== oldEdgeValue;
   const hasLegacyTarget = Object.prototype.hasOwnProperty.call(
     values,
     "target_pixels",
   );
-  if (oldScaleType !== "按像素数量" && !hasLegacyTarget) {
+  if (!shouldMigrateScale && !shouldMigrateEdge && !hasLegacyTarget) {
     return info;
   }
 
   const converted = { ...values };
-  if (oldScaleType === "按像素数量") {
-    converted.scale_type = "按分辨率";
+  if (shouldMigrateScale) {
+    converted.scale_type = normalizedScaleType;
+  }
+  if (shouldMigrateEdge) {
+    converted.edge_mode = normalizedEdgeValue;
   }
   if (hasLegacyTarget) {
     converted.target_resolution = legacyTargetToResolution(
@@ -837,7 +902,7 @@ async function prepareNodeForMaskEditor(node) {
   }
   canvas?.setDirty?.(true, true);
   if (!syncNodePreviewImage(node)) {
-    throw new Error("节点图片还没有加载完成，无法打开遮罩编辑器。");
+    throw new Error("The node image has not finished loading; cannot open the mask editor.");
   }
   syncMaskEditorImageAlias(node);
 }
@@ -846,7 +911,7 @@ async function openComfyMaskEditorForNode(node) {
   await prepareNodeForMaskEditor(node);
   const command = app.extensionManager?.command;
   if (typeof command?.execute !== "function") {
-    throw new Error("当前 ComfyUI 前端不支持打开官方遮罩编辑器。");
+    throw new Error("This ComfyUI frontend does not support opening the official mask editor.");
   }
   await command.execute("Comfy.MaskEditor.OpenMaskEditor");
 }
@@ -1009,7 +1074,7 @@ function pickQwenFixedPoint(
   );
   if (!candidates.length) {
     throw new Error(
-      `resolution=${resolution}, tol_ratio=${tolRatio}, alignment_factor=${safeBlockSize} 找不到候选尺寸`,
+      `resolution=${resolution}, tol_ratio=${tolRatio}, alignment_factor=${safeBlockSize}: no candidate sizes found`,
     );
   }
 
@@ -1046,7 +1111,7 @@ function pickQwenFixedPoint(
       return widthAfter === candidate.width && heightAfter === candidate.height;
     });
     if (!fixedCandidates.length) {
-      throw new Error(`resolution=${resolution} 找不到不动点尺寸`);
+      throw new Error(`resolution=${resolution}: no fixed-point size found`);
     }
     selected = fixedCandidates.sort(
       (left, right) =>
@@ -1067,8 +1132,8 @@ function pickQwenFixedPoint(
 function calculateTargetDimensions(node, sourceWidth, sourceHeight) {
   if (!sourceWidth || !sourceHeight) return null;
   const scaleWidget = findWidget(node, "scale_type");
-  const scaleType = String(scaleWidget?.value || "无");
-  if (scaleType === "无") {
+  const scaleType = normalizeScaleTypeValue(scaleWidget?.value || "None");
+  if (scaleType === "None") {
     return {
       width: sourceWidth,
       height: sourceHeight,
@@ -1084,7 +1149,7 @@ function calculateTargetDimensions(node, sourceWidth, sourceHeight) {
     0.2,
     numberValue(findWidget(node, "tol_ratio"), 0.8),
   );
-  if (scaleType === "按分辨率") {
+  if (scaleType === "By Resolution") {
     const resolution = normalizeResolutionValue(
       numberValue(findWidget(node, "target_resolution"), 1024),
     );
@@ -1100,11 +1165,11 @@ function calculateTargetDimensions(node, sourceWidth, sourceHeight) {
   const ratio = sourceWidth / sourceHeight;
   let idealWidth;
   let idealHeight;
-  if (scaleType === "按图像比例") {
+  if (scaleType === "By Image Scale") {
     const scale = Math.max(0.01, numberValue(findWidget(node, "target_scale"), 1));
     idealWidth = sourceWidth * scale;
     idealHeight = sourceHeight * scale;
-  } else if (scaleType === "按目标宽度") {
+  } else if (scaleType === "By Target Width") {
     idealWidth = Math.max(1, numberValue(findWidget(node, "target_width"), 1024));
     idealHeight = idealWidth / ratio;
   } else {
@@ -1136,15 +1201,15 @@ function syncNodeControls(node) {
   removeNativeImagePreview(node);
   const scaleWidget = findWidget(node, "scale_type");
   const edgeWidget = findWidget(node, "edge_mode");
-  const scaleType = String(scaleWidget?.value || "无");
-  const meta = SCALE_META[scaleType] || SCALE_META["无"];
-  const scalingEnabled = scaleType !== "无";
+  const scaleType = normalizeScaleTypeValue(scaleWidget?.value || "None");
+  const meta = SCALE_META[scaleType] || SCALE_META["None"];
+  const scalingEnabled = scaleType !== "None";
 
   for (const name of TARGET_WIDGETS) {
     const widget = findWidget(node, name);
     const active = name === meta.widget;
     setWidgetHidden(widget, !active);
-    if (widget) widget.label = active ? meta.label : "缩放目标值";
+    if (widget) widget.label = active ? meta.label : "Target Value";
   }
 
   for (const name of [
@@ -1157,21 +1222,21 @@ function syncNodeControls(node) {
   }
   setWidgetHidden(
     findWidget(node, "pad_color"),
-    !scalingEnabled || String(edgeWidget?.value || "拉伸") !== "填充 / 边缘填充",
+    !scalingEnabled || normalizeEdgeModeValue(edgeWidget?.value || "Stretch") !== "Pad / Edge Fill",
   );
   for (const name of MASK_PARAM_WIDGETS) {
     setWidgetHidden(findWidget(node, name), true);
   }
 
   const dimensions = node._astralImageDimensions;
-  let estimateText = "上传图片后可查看预计输出尺寸。";
+  let estimateText = "Upload an image to preview the estimated output size.";
   if (dimensions && !scalingEnabled) {
     const resolution = autoQwenResolution(
       dimensions.width,
       dimensions.height,
     );
     estimateText =
-      `保持原尺寸：${dimensions.width} × ${dimensions.height}` +
+      `Keep source size: ${dimensions.width} × ${dimensions.height}` +
       ` · resolution ${resolution}`;
   } else if (dimensions) {
     try {
@@ -1184,22 +1249,22 @@ function syncNodeControls(node) {
         1,
         Math.round(numberValue(findWidget(node, "alignment_factor"), 32)),
       );
-      const edgeMode = String(edgeWidget?.value || "拉伸");
+      const edgeMode = normalizeEdgeModeValue(edgeWidget?.value || "Stretch");
       const padText =
-        edgeMode === "填充 / 边缘填充"
-          ? ` · 填充 ${String(findWidget(node, "pad_color")?.value || "0,0,0")}`
+        edgeMode === "Pad / Edge Fill"
+          ? ` · pad ${String(findWidget(node, "pad_color")?.value || "0,0,0")}`
           : "";
       estimateText =
-        `预计输出：${target.width} × ${target.height}` +
+        `Estimated output: ${target.width} × ${target.height}` +
         ` · resolution ${target.resolution}` +
-        ` · 对齐 ${alignment}${padText}`;
+        ` · align ${alignment}${padText}`;
     } catch (error) {
-      estimateText = error?.message || "无法计算预计输出尺寸。";
+      estimateText = error?.message || "Unable to calculate the estimated output size.";
     }
   }
 
   const targetHelp = `${meta.help}\n${estimateText}`;
-  setWidgetTooltip(scaleWidget, `选择缩放依据。\n${targetHelp}`);
+  setWidgetTooltip(scaleWidget, `Choose the resize basis.\n${targetHelp}`);
   setWidgetTooltip(findWidget(node, meta.widget), targetHelp);
 
   node.graph?.setDirtyCanvas?.(true, true);
@@ -1217,7 +1282,7 @@ async function refreshNodePreview(node, force = false) {
     node._astralEmpty.classList.remove("hidden");
     node._astralEditButton.hidden = true;
     syncNodePreviewImage(node);
-    setNodeStatus(node, "上传后在这里预览。");
+    setNodeStatus(node, "Uploaded images appear here.");
     syncNodeControls(node);
     return;
   }
@@ -1228,7 +1293,7 @@ async function refreshNodePreview(node, force = false) {
     ? Date.now()
     : node._astralCacheVersion || Date.now();
   const url = makeImageUrl(value, node._astralCacheVersion);
-  setNodeStatus(node, "正在载入预览…");
+  setNodeStatus(node, "Loading preview…");
 
   await new Promise((resolve) => {
     const image = node._astralPreviewImg;
@@ -1255,7 +1320,7 @@ async function refreshNodePreview(node, force = false) {
       node._astralEmpty.classList.remove("hidden");
       node._astralEditButton.hidden = true;
       syncNodePreviewImage(node);
-      setNodeStatus(node, "图片预览失败，请重新上传或检查文件。", true);
+      setNodeStatus(node, "Image preview failed; upload again or check the file.", true);
       syncNodeControls(node);
       resolve();
     };
@@ -1306,7 +1371,7 @@ async function pasteImageFromClipboard(node, clipboardData) {
 
   node._astralPasting = true;
   node._astralPasteArmed = false;
-  setNodeStatus(node, "正在从剪贴板上传图片…");
+  setNodeStatus(node, "Uploading image from clipboard…");
 
   try {
     const form = new FormData();
@@ -1321,24 +1386,24 @@ async function pasteImageFromClipboard(node, clipboardData) {
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
       throw new Error(
-        `图片上传失败（${response.status}）${detail ? `：${detail}` : ""}`,
+        `Image upload failed (${response.status})${detail ? `: ${detail}` : ""}`,
       );
     }
 
     const result = await response.json();
-    if (!result?.name) throw new Error("图片上传接口没有返回文件名。");
+    if (!result?.name) throw new Error("The image upload API did not return a file name.");
     const uploadedPath = result.subfolder
       ? `${result.subfolder}/${result.name}`
       : result.name;
     const type = String(result.type || "input").toLowerCase();
     const path = type === "input" ? uploadedPath : `${uploadedPath} [${type}]`;
     if (!commitImageFileValue(node, path)) {
-      throw new Error("无法更新节点的图像参数。");
+      throw new Error("Unable to update the node image parameter.");
     }
     return true;
   } catch (error) {
-    console.error("[Image Astral] 粘贴图片失败", error);
-    setNodeStatus(node, error?.message || "粘贴图片失败", true);
+    console.error("[Image Astral] Failed to paste image", error);
+    setNodeStatus(node, error?.message || "Paste image failed", true);
     return false;
   } finally {
     node._astralPasting = false;
@@ -1365,8 +1430,8 @@ function activateImageNode(node) {
   const editButton = document.createElement("button");
   editButton.className = "xm-astral-edit-fab";
   editButton.type = "button";
-  editButton.title = "打开编辑器";
-  editButton.setAttribute("aria-label", "打开图像编辑器");
+  editButton.title = "Open editor";
+  editButton.setAttribute("aria-label", "Open image editor");
   editButton.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
          stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
@@ -1382,18 +1447,18 @@ function activateImageNode(node) {
   const preview = document.createElement("div");
   preview.className = "xm-astral-preview";
   const previewImage = document.createElement("img");
-  previewImage.alt = "Image Astral 图片预览";
+  previewImage.alt = "Image Astral image preview";
   previewImage.tabIndex = 0;
   previewImage.title =
-    "右击打开图像菜单；单击后可按 Ctrl+V 粘贴图片";
+    "Right-click to open the image menu; click, then press Ctrl+V to paste an image";
   const empty = document.createElement("div");
   empty.className = "xm-astral-empty";
-  empty.textContent = "请在上方“加载图像”控件上传或选择图片";
+  empty.textContent = "Upload or choose an image with the \"Load Image\" control above";
   preview.append(previewImage, editButton, empty);
 
   const meta = document.createElement("div");
   meta.className = "xm-astral-meta";
-  meta.textContent = "上传后在这里预览。";
+  meta.textContent = "Uploaded images appear here.";
   root.append(preview, meta);
 
   Object.assign(node, {
@@ -1474,9 +1539,9 @@ function activateImageNode(node) {
     });
     node._astralModal = modal;
     modal.open().catch((error) => {
-      console.error("[Image Astral] 无法打开编辑器", error);
+      console.error("[Image Astral] Unable to open editor", error);
       node._astralModal = null;
-      setNodeStatus(node, error?.message || "无法打开图像编辑器", true);
+      setNodeStatus(node, error?.message || "Unable to open the image editor", true);
     });
   };
 
@@ -1917,24 +1982,24 @@ class ImageEditorModal {
         }
       </style>
       <div class="backdrop">
-        <div class="window" role="dialog" aria-modal="false" aria-label="Image Astral 图像编辑器">
-          <header title="拖动标题栏移动窗口">
+        <div class="window" role="dialog" aria-modal="false" aria-label="Image Astral image editor">
+          <header title="Drag the title bar to move the window.">
             <div>
-              <h2>Image Astral · 图像编辑器</h2>
-              <div class="head-meta">裁剪与旋转均在本机浏览器中完成</div>
+              <h2>Image Astral · Image Editor</h2>
+              <div class="head-meta">Cropping and rotation are done locally in this browser</div>
             </div>
-            <button type="button" data-action="close" title="关闭">关闭</button>
+            <button type="button" data-action="close" title="Close">Close</button>
           </header>
           <div class="content">
             <div class="toolbar">
-              <button type="button" data-tool="crop" class="active">裁切</button>
-              <button type="button" data-tool="rotate">旋转</button>
-              <button type="button" data-action="open-mask-editor" title="先在自定义编辑器中打开 ComfyUI 官方遮罩编辑器">打开遮罩编辑器</button>
-              <button type="button" data-tool="mask-settings" title="设置遮罩颜色、填充漏洞、倒角、反转和扩展生长">遮罩参数</button>
+              <button type="button" data-tool="crop" class="active">Crop</button>
+              <button type="button" data-tool="rotate">Rotate</button>
+              <button type="button" data-action="open-mask-editor" title="Open the ComfyUI official mask editor in the custom editor first">Open Mask Editor</button>
+              <button type="button" data-tool="mask-settings" title="Set mask color, hole filling, bevel, invert, and grow">Mask Settings</button>
               <span class="toolbar-spacer"></span>
-              <button type="button" data-action="undo">↶ 撤销</button>
-              <button type="button" data-action="redo">↷ 重做</button>
-              <button type="button" data-action="reset" class="danger">恢复原图</button>
+              <button type="button" data-action="undo">↶ Undo</button>
+              <button type="button" data-action="redo">↷ Redo</button>
+              <button type="button" data-action="reset" class="danger">Restore Original</button>
             </div>
             <div class="workspace">
               <main class="stage">
@@ -1958,15 +2023,15 @@ class ImageEditorModal {
                     <span class="line h1"></span>
                     <span class="line h2"></span>
                   </div>
-                  <div class="busy">正在上传编辑结果…</div>
+                  <div class="busy">Uploading edit result…</div>
                 </div>
               </main>
               <aside>
                 <section class="panel active" data-panel="crop">
-                  <h3>裁切</h3>
-                  <label class="field">常用宽高比
+                  <h3>Crop</h3>
+                  <label class="field">Common aspect ratios
                     <select data-control="crop-ratio">
-                      <option value="0">自由</option>
+                      <option value="0">Free</option>
                       <option value="1">1:1</option>
                       <option value="1.3333333333">4:3</option>
                       <option value="0.75">3:4</option>
@@ -1974,23 +2039,23 @@ class ImageEditorModal {
                       <option value="0.5625">9:16</option>
                       <option value="1.5">3:2</option>
                       <option value="0.6666666667">2:3</option>
-                      <option value="custom">自定义尺寸</option>
+                      <option value="custom">Custom</option>
                     </select>
                   </label>
                   <div class="row">
-                    <label class="field">输出宽度
+                    <label class="field">Output Width
                       <input data-control="crop-width" type="number" min="1" max="16384" step="1" value="512">
                     </label>
-                    <label class="field">输出高度
+                    <label class="field">Output Height
                       <input data-control="crop-height" type="number" min="1" max="16384" step="1" value="512">
                     </label>
                   </div>
-                  <button type="button" data-action="apply-crop" class="primary">应用裁剪</button>
-                  <div class="hint">拖动框内移动，拖动八个控制点改变大小；在框外拖动可重新框选。自定义尺寸会按该宽高输出，源图不足时自动等比放大；应用前仍可移动裁剪框。最终上传时尚未应用的裁切也会自动应用。</div>
+                  <button type="button" data-action="apply-crop" class="primary">Apply Crop</button>
+                  <div class="hint">Drag inside the box to move it, drag the eight handles to resize, and drag outside the box to draw a new selection. Custom sizes output at that width and height, scaling up proportionally when the source is too small; the crop box can still be moved before applying. A crop that has not been applied is also applied automatically on final upload.</div>
                 </section>
                 <section class="panel" data-panel="rotate">
-                  <h3>旋转</h3>
-                  <label class="field">角度
+                  <h3>Rotate</h3>
+                  <label class="field">Angle
                     <div class="row">
                       <input data-control="angle-number" type="number" min="-180" max="180" step="0.1" value="0">
                       <span>°</span>
@@ -2001,47 +2066,47 @@ class ImageEditorModal {
                     <button type="button" data-action="rotate-minus90">-90°</button>
                     <button type="button" data-action="rotate-plus90">+90°</button>
                     <button type="button" data-action="rotate-180">180°</button>
-                    <button type="button" data-action="rotate-reset">归零</button>
+                    <button type="button" data-action="rotate-reset">Reset</button>
                   </div>
-                  <button type="button" data-action="apply-rotation" class="primary">应用旋转</button>
-                  <div class="hint">旋转时显示虚线九宫格辅助对齐；画布会自动扩展，避免裁掉旋转后的边角。</div>
+                  <button type="button" data-action="apply-rotation" class="primary">Apply Rotation</button>
+                  <div class="hint">A dashed rule-of-thirds grid appears while rotating; the canvas expands automatically so rotated corners are not cut off.</div>
                 </section>
                 <section class="panel" data-panel="mask-settings">
-                  <h3>遮罩参数</h3>
-                  <label class="field">遮罩颜色 RGB
+                  <h3>Mask Settings</h3>
+                  <label class="field">Mask Color RGB
                     <div class="mask-color-row">
                       <input data-control="mask-color" type="text" value="0,0,0" placeholder="0,0,0" autocomplete="off">
-                      <span class="mask-color-swatch" data-role="mask-color-swatch" title="遮罩颜色预览"></span>
+                      <span class="mask-color-swatch" data-role="mask-color-swatch" title="Mask color preview"></span>
                     </div>
                   </label>
                   <label class="checkbox-row">
                     <input data-control="fill-mask-holes" type="checkbox">
-                    填充遮罩漏洞
+                    Fill Mask Holes
                   </label>
                   <label class="checkbox-row">
                     <input data-control="bevel-mask" type="checkbox">
-                    遮罩倒角（1 px 边缘柔化）
+                    Bevel Mask (1 px edge softening)
                   </label>
                   <label class="checkbox-row">
                     <input data-control="invert-mask" type="checkbox">
-                    反转遮罩
+                    Invert Mask
                   </label>
-                  <label class="field">遮罩扩展生长
+                  <label class="field">Mask Grow
                     <div class="row">
                       <input data-control="mask-grow-range" type="range" min="-256" max="256" step="1" value="0">
                       <input data-control="mask-grow-number" type="number" min="-256" max="256" step="1" value="0">
                     </div>
                   </label>
-                  <div class="hint">颜色填写 0–255 的 RGB，例如 0,0,0。扩展生长为正数时向外膨胀，负数时向内收缩。参数会随节点工作流一起保存，并影响 mask 与 mask_image 输出。</div>
+                  <div class="hint">Enter RGB values from 0–255, for example 0,0,0. Positive grow values expand outward; negative values shrink inward. These parameters are saved with the node workflow and affect the mask and mask_image outputs.</div>
                 </section>
               </aside>
             </div>
           </div>
           <footer>
-            <div class="footer-status" data-role="status">正在载入图片…</div>
+            <div class="footer-status" data-role="status">Loading image…</div>
             <div class="footer-actions">
-              <button type="button" data-action="cancel">取消</button>
-              <button type="button" data-action="apply" class="primary">应用并上传</button>
+              <button type="button" data-action="cancel">Cancel</button>
+              <button type="button" data-action="apply" class="primary">Apply and Upload</button>
             </div>
           </footer>
         </div>
@@ -2280,20 +2345,20 @@ class ImageEditorModal {
     await new Promise((resolve, reject) => {
       image.onload = resolve;
       image.onerror = () =>
-        reject(new Error(`${label}载入失败，请重新选择文件`));
+        reject(new Error(`${label} failed to load; choose the file again`));
       image.src = url;
     });
     return image;
   }
 
   async loadImage() {
-    const currentPromise = this.loadBrowserImage(this.imageUrl, "当前图片");
+    const currentPromise = this.loadBrowserImage(this.imageUrl, "Current image");
     const originalPromise =
       this.originalImageUrl && this.originalImageUrl !== this.imageUrl
-        ? this.loadBrowserImage(this.originalImageUrl, "最初原图").catch(
+        ? this.loadBrowserImage(this.originalImageUrl, "Original image").catch(
             (error) => {
               console.warn(
-                "[Image Astral] 最初原图载入失败，将使用当前图片作为恢复基准",
+                "[Image Astral] Original image failed to load; using the current image as the restore baseline",
                 error,
               );
               return null;
@@ -2320,7 +2385,7 @@ class ImageEditorModal {
     this.applyButton.disabled = false;
     this.fitCanvasToStage();
     this.setStatus(
-      `当前 ${image.naturalWidth} × ${image.naturalHeight} px · 最初原图 ${this.originalImage.naturalWidth} × ${this.originalImage.naturalHeight} px`,
+      `Current ${image.naturalWidth} × ${image.naturalHeight} px · original ${this.originalImage.naturalWidth} × ${this.originalImage.naturalHeight} px`,
     );
   }
 
@@ -2398,14 +2463,14 @@ class ImageEditorModal {
     const color = normalizeRgbColor(this.maskColorInput.value);
     if (!color) {
       this.syncMaskSettings();
-      this.setStatus("遮罩颜色格式无效，请填写 0–255，例如 0,0,0。", true);
+      this.setStatus("Invalid mask color format; enter 0–255, e.g. 0,0,0.", true);
       return;
     }
     this.maskColorInput.value = color;
     this.maskColorInput.classList.remove("invalid");
     this.updateMaskColorSwatch(color);
     setNodeWidgetValue(this.node, "mask_color", color);
-    this.setStatus(`遮罩颜色已设为 RGB ${color}。`);
+    this.setStatus(`Mask color set to RGB ${color}.`);
   }
 
   commitMaskGrow(value) {
@@ -2415,10 +2480,10 @@ class ImageEditorModal {
     setNodeWidgetValue(this.node, "mask_grow", grow);
     this.setStatus(
       grow === 0
-        ? "遮罩扩展生长已设为 0。"
+        ? "Mask grow set to 0."
         : grow > 0
-          ? `遮罩将向外扩展 ${grow} px。`
-          : `遮罩将向内收缩 ${Math.abs(grow)} px。`,
+          ? `Mask will expand outward by ${grow} px.`
+          : `Mask will shrink inward by ${Math.abs(grow)} px.`,
     );
   }
 
@@ -2434,21 +2499,21 @@ class ImageEditorModal {
     if (this.busy || !this.baseCanvas) return;
     try {
       if (this.hasPendingChanges()) {
-        this.setStatus("正在保存未提交的图像编辑…");
+        this.setStatus("Saving uncommitted image edits…");
         const saved = await this.applyAndUpload({ closeAfterUpload: false });
         if (!saved) return;
       }
-      setNodeStatus(this.node, "正在打开 ComfyUI 官方遮罩编辑器…");
+      setNodeStatus(this.node, "Opening the ComfyUI official mask editor…");
       this.close();
       await new Promise((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(resolve));
       });
       await openComfyMaskEditorForNode(this.node);
     } catch (error) {
-      console.error("[Image Astral] 无法打开官方遮罩编辑器", error);
+      console.error("[Image Astral] Unable to open the official mask editor", error);
       setNodeStatus(
         this.node,
-        error?.message || "无法打开 ComfyUI 官方遮罩编辑器。",
+        error?.message || "Unable to open the ComfyUI official mask editor.",
         true,
       );
     }
@@ -2590,7 +2655,7 @@ class ImageEditorModal {
     );
     this.ctx.restore();
     requestAnimationFrame(() => this.fitCanvasToStage());
-    this.setStatus(`旋转预览 ${this.angle.toFixed(1)}° · ${width} × ${height} px`);
+    this.setStatus(`Rotation preview ${this.angle.toFixed(1)}° · ${width} × ${height} px`);
   }
 
   syncViewFromBase() {
@@ -2628,7 +2693,7 @@ class ImageEditorModal {
 
   applyRotation(showStatus = true) {
     if (!this.baseCanvas || Math.abs(this.angle) < 0.01) {
-      if (showStatus) this.setStatus("当前没有待应用的旋转。", true);
+      if (showStatus) this.setStatus("There is no rotation to apply.", true);
       return false;
     }
     this.renderRotationPreview();
@@ -2643,7 +2708,7 @@ class ImageEditorModal {
     this.syncViewFromBase();
     this.pushHistory();
     if (showStatus) {
-      this.setStatus(`旋转已应用：${rotated.width} × ${rotated.height} px`);
+      this.setStatus(`Rotation applied: ${rotated.width} × ${rotated.height} px`);
     }
     return true;
   }
@@ -2660,7 +2725,7 @@ class ImageEditorModal {
     this.angleRange.value = "0";
     this.syncViewFromBase();
     this.pushHistory();
-    this.setStatus("已恢复为节点最初加载的原图。");
+    this.setStatus("Restored the original image loaded by the node.");
   }
 
   cropPoint(event) {
@@ -2749,7 +2814,7 @@ class ImageEditorModal {
     this.cropHeight.value = String(Math.round(this.cropRect.height));
     this.updateCropOverlay();
     this.setStatus(
-      `裁剪框 ${Math.round(this.cropRect.width)} × ${Math.round(this.cropRect.height)} px`,
+      `Crop box ${Math.round(this.cropRect.width)} × ${Math.round(this.cropRect.height)} px`,
     );
   }
 
@@ -2927,7 +2992,7 @@ class ImageEditorModal {
     const height = Math.round(clamp(Number(this.cropHeight.value) || 512, 1, MAX_CROP_EDGE));
     if (width * height > MAX_CROP_PIXELS) {
       this.setStatus(
-        `自定义尺寸过大：${width} × ${height} 超过 ${MAX_CROP_PIXELS / 1048576} 百万像素上限。`,
+        `Custom size too large: ${width} × ${height} exceeds the ${MAX_CROP_PIXELS / 1048576} megapixel limit.`,
         true,
       );
       return;
@@ -2953,9 +3018,9 @@ class ImageEditorModal {
     this.updateCropOverlay();
     const sourceText =
       Math.round(cropWidth) === width && Math.round(cropHeight) === height
-        ? `源图区域 ${width} × ${height}`
-        : `源图区域 ${Math.round(cropWidth)} × ${Math.round(cropHeight)}，应用时等比缩放到 ${width} × ${height}`;
-    this.setStatus(`自定义输出 ${width} × ${height} px · ${sourceText}`);
+        ? `Source area ${width} × ${height}`
+        : `Source area ${Math.round(cropWidth)} × ${Math.round(cropHeight)}, scaled proportionally to ${width} × ${height} on apply`;
+    this.setStatus(`Custom output ${width} × ${height} px · ${sourceText}`);
   }
 
   applyCrop(showStatus = true) {
@@ -2993,7 +3058,7 @@ class ImageEditorModal {
     this.syncViewFromBase();
     this.resetCropRect();
     this.pushHistory();
-    if (showStatus) this.setStatus(`裁剪已应用：${width} × ${height} px`);
+    if (showStatus) this.setStatus(`Crop applied: ${width} × ${height} px`);
     return true;
   }
 
@@ -3056,7 +3121,7 @@ class ImageEditorModal {
     this.redoStack.push(current);
     this.restoreState(this.history[this.history.length - 1]);
     this.updateHistoryButtons();
-    this.setStatus("已撤销。");
+    this.setStatus("Undone.");
   }
 
   redo() {
@@ -3066,7 +3131,7 @@ class ImageEditorModal {
     this.history.push(state);
     this.historyBytes += state.byteLength;
     this.updateHistoryButtons();
-    this.setStatus("已重做。");
+    this.setStatus("Redone.");
   }
 
   updateHistoryButtons() {
@@ -3086,11 +3151,11 @@ class ImageEditorModal {
     if (this.cropDirty) this.applyCrop(false);
 
     this.setBusy(true);
-    this.setStatus("正在编码 PNG 并上传到 ComfyUI input 目录…");
+    this.setStatus("Encoding PNG and uploading to the ComfyUI input directory…");
     try {
       const blob = await new Promise((resolve, reject) => {
         this.baseCanvas.toBlob(
-          (result) => (result ? resolve(result) : reject(new Error("PNG 编码失败"))),
+          (result) => (result ? resolve(result) : reject(new Error("PNG encoding failed"))),
           "image/png",
         );
       });
@@ -3114,7 +3179,7 @@ class ImageEditorModal {
       if (!response.ok) {
         const detail = await response.text().catch(() => "");
         throw new Error(
-          `上传失败：HTTP ${response.status}${detail ? ` · ${detail.slice(0, 180)}` : ""}`,
+          `Upload failed: HTTP ${response.status}${detail ? ` · ${detail.slice(0, 180)}` : ""}`,
         );
       }
       const result = await response.json();
@@ -3125,14 +3190,14 @@ class ImageEditorModal {
         width: this.baseCanvas.width,
         height: this.baseCanvas.height,
       });
-      this.setStatus(`已保存并回写：${path}`);
+      this.setStatus(`Saved and written back: ${path}`);
       this.setBusy(false);
       if (closeAfterUpload) this.close();
       return true;
     } catch (error) {
-      console.error("[Image Astral] 编辑器上传失败", error);
+      console.error("[Image Astral] Editor upload failed", error);
       this.setBusy(false);
-      this.setStatus(error?.message || "编辑结果上传失败", true);
+      this.setStatus(error?.message || "Failed to upload the edit result", true);
       return false;
     }
   }

@@ -160,6 +160,14 @@ ComfyUI/input/image_astral/edited
 
 把 Qwen 固定网格生成结果按指定宽高还原，默认使用 `lanczos`。输入 `restore_width` / `restore_height` 通常来自工作流中记录的前处理尺寸，输出为还原后的图像以及最终宽高。
 
+## Localization
+
+Node display names, descriptions, input/output names, tooltips and errors use
+English as the source language. When ComfyUI's language setting (`Comfy.Locale`)
+starts with `zh`, the Chinese names, tooltips and combo option labels from
+`locales/zh/nodeDefs.json` are shown instead. Combo option values stay English so
+workflows remain portable; the Chinese labels are display-only.
+
 ## 开发
 
 `dev_check.py` 用于在不启动 ComfyUI 的情况下加载节点包、注册节点并执行一次自检：

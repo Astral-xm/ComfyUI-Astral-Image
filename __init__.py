@@ -12,7 +12,7 @@ from .nodes.image_editor import XMAstralImageLoadEditor
 from .nodes.qwen21 import XMAstralRestoreImageSize
 from .nodes.resolution import XMAstralResolutionSelector
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 # web/js 目录下的 .js 会被 ComfyUI 自动当作前端扩展加载
 WEB_DIRECTORY = "./web/js"

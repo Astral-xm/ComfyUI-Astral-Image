@@ -113,13 +113,13 @@ def check_resolution_selector(pack) -> str:
         raise SystemExit(f"尺寸选择器名称错误：{schema.display_name}")
     inputs = {item.id: item for item in schema.inputs}
     outputs = [item.display_name for item in schema.outputs]
-    if outputs != ["Latent", "宽度", "高度"]:
+    if outputs != ["Latent", "Width", "Height"]:
         raise SystemExit(f"尺寸选择器输出错误：{outputs}")
     ratio_options = list(inputs["aspect_ratio"].options)
     if "8:5 (Widescreen)" not in ratio_options:
         raise SystemExit("宽高比缺少 8:5")
-    if "自定义宽高" not in ratio_options:
-        raise SystemExit("宽高比缺少自定义宽高")
+    if "Custom Size" not in ratio_options:
+        raise SystemExit("宽高比缺少 Custom Size")
 
     standard = node_cls.execute(
         aspect_ratio="8:5 (Widescreen)",
@@ -145,6 +145,7 @@ def check_resolution_selector(pack) -> str:
             f"期望 {expected_dtype}，实际 {latent['samples'].dtype}"
         )
 
+    # 旧工作流保存的是中文选项值，生产代码仍将其识别为 Custom Size。
     for megapixels, multiple in ((0.1, 1), (16.0, 256)):
         custom = node_cls.execute(
             aspect_ratio="自定义宽高",
@@ -269,7 +270,7 @@ def check_image_editor(pack, pack_root: Path, comfy_root: Path) -> str:
     ]
 
     schema = node_cls.define_schema()
-    if schema.display_name != "加载图像与编辑":
+    if schema.display_name != "Load Image & Edit":
         raise SystemExit(
             f"图像加载与编辑节点名称错误：{schema.display_name}"
         )
@@ -303,7 +304,7 @@ def check_image_editor(pack, pack_root: Path, comfy_root: Path) -> str:
     if "target_pixels" in schema_inputs:
         raise SystemExit("旧 target_pixels 参数仍然存在")
     scale_options = list(schema_inputs["scale_type"].options)
-    if "按分辨率" not in scale_options or "按像素数量" in scale_options:
+    if "By Resolution" not in scale_options or "By Pixel Count" in scale_options:
         raise SystemExit(f"缩放模式没有正确切换为按分辨率：{scale_options}")
     if schema_inputs["pad_color"].default != "0,0,0":
         raise SystemExit("填充颜色默认值应为 0,0,0")
