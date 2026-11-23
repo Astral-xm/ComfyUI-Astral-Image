@@ -433,22 +433,28 @@ function isOriginalSizeMode(value) {
   return normalizeAspectRatioValue(value) === ORIGINAL_SIZE_MODE;
 }
 
+function isSizeModeValue(value) {
+  const text = String(value ?? "").trim();
+  return (
+    text === "Megapixels" ||
+    text === "百万像素" ||
+    text === ORIGINAL_SIZE_MODE ||
+    LEGACY_ORIGINAL_SIZE_MODES.has(text)
+  );
+}
+
 function migrateResolutionSelectorWidgets(info) {
   if (!info || typeof info !== "object") return info;
   const values = info.widgets_values;
-  if (
-    Array.isArray(values) &&
-    values.length === 7
-  ) {
+  if (Array.isArray(values) && values.length > 1 && isSizeModeValue(values[1])) {
     // Older nodes had a size_mode widget right after aspect_ratio.
-    const [aspect, sizeMode, ...rest] = values;
-    const legacyOriginalSize =
-      sizeMode === ORIGINAL_SIZE_MODE ||
-      LEGACY_ORIGINAL_SIZE_MODES.has(String(sizeMode ?? "").trim());
-    return {
-      ...info,
-      widgets_values: [legacyOriginalSize ? ORIGINAL_SIZE_MODE : aspect, ...rest],
-    };
+    const aspect = values[0];
+    const sizeMode = String(values[1]).trim();
+    const next = [aspect, ...values.slice(2)];
+    if (sizeMode !== "Megapixels" && sizeMode !== "百万像素") {
+      next[0] = ORIGINAL_SIZE_MODE;
+    }
+    return { ...info, widgets_values: next };
   }
   if (
     values &&
@@ -620,7 +626,67 @@ function ensureResolutionPreview(node) {
   }
 }
 
+const RESOLUTION_WIDGET_DEFAULTS = Object.freeze({
+  megapixels: { min: 0.1, max: 16.0, fallback: 2.0 },
+  multiple: { min: 1, max: 256, fallback: 32 },
+  width: { min: 8, max: 16384, fallback: 1024 },
+  height: { min: 8, max: 16384, fallback: 1024 },
+  batch_size: { min: 1, max: 4096, fallback: 1 },
+});
+
+function repairShiftedResolutionWidgets(node) {
+  const megapixelsWidget = findWidget(node, "megapixels");
+  if (!megapixelsWidget) return;
+  const raw = megapixelsWidget.value;
+  if (typeof raw === "number" && Number.isFinite(raw)) return;
+  if (!isSizeModeValue(raw)) return;
+  // Workflows saved while the removed Size Mode widget existed cannot be
+  // shifted back reliably once they were saved, so fall back to known values.
+  const sizeMode = String(raw).trim();
+  for (const name of [
+    "megapixels",
+    "multiple",
+    "width",
+    "height",
+    "batch_size",
+  ]) {
+    setWidgetValue(
+      findWidget(node, name),
+      RESOLUTION_WIDGET_DEFAULTS[name].fallback,
+    );
+  }
+  if (sizeMode !== "Megapixels" && sizeMode !== "百万像素") {
+    setWidgetValue(findWidget(node, "aspect_ratio"), ORIGINAL_SIZE_MODE);
+  }
+}
+
+function sanitizeResolutionWidgets(node) {
+  for (const [name, limits] of Object.entries(RESOLUTION_WIDGET_DEFAULTS)) {
+    const widget = findWidget(node, name);
+    if (!widget) continue;
+    const value = Number(widget.value);
+    if (!Number.isFinite(value) || value < limits.min || value > limits.max) {
+      setWidgetValue(widget, limits.fallback);
+    }
+  }
+  const aspectWidget = findWidget(node, "aspect_ratio");
+  if (!aspectWidget) return;
+  const value = normalizeAspectRatioValue(aspectWidget.value);
+  const known =
+    value === ORIGINAL_RATIO_MODE ||
+    value === ORIGINAL_SIZE_MODE ||
+    isCustomSizeMode(value) ||
+    Object.hasOwn(ASPECT_RATIO_VALUES, value);
+  if (!known) {
+    setWidgetValue(aspectWidget, "16:9 (Widescreen)");
+  } else if (aspectWidget.value !== value) {
+    setWidgetValue(aspectWidget, value);
+  }
+}
+
 function syncResolutionSelectorWidgets(node) {
+  repairShiftedResolutionWidgets(node);
+  sanitizeResolutionWidgets(node);
   const modeWidget = findWidget(node, "aspect_ratio");
   if (modeWidget && modeWidget.value === LEGACY_CUSTOM_SIZE_MODE) {
     setWidgetValue(modeWidget, CUSTOM_SIZE_MODE);

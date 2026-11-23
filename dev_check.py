@@ -109,7 +109,7 @@ def check_resolution_selector(pack) -> str:
         raise SystemExit(f"尺寸选择器节点 ID 错误：{schema.node_id}")
     if pack.NODE_CLASS_MAPPINGS.get("ResolutionSelector") is node_cls:
         raise SystemExit("尺寸选择器不能覆盖 ComfyUI 内置 ResolutionSelector")
-    if schema.display_name != "ResolutionSelectLatent":
+    if schema.display_name != "Resolution Select Latent":
         raise SystemExit(f"尺寸选择器名称错误：{schema.display_name}")
     inputs = {item.id: item for item in schema.inputs}
     outputs = [item.display_name for item in schema.outputs]

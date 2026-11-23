@@ -118,7 +118,7 @@
     }
   },
   "ResolutionSelectLatent": {
-    "display_name": "ResolutionSelectLatent",
+    "display_name": "Resolution Select Latent",
     "description": "按宽高比和百万像素计算输出尺寸，并按倍数对齐；也可手动指定宽高并创建空 Latent；接入图像后可直接复用原图比例或原图宽高。作者：xm（ComfyUI-Astral-Image），禁止移除本署名。",
     "inputs": {
       "image": {
@@ -298,7 +298,7 @@
     }
   },
   "XMAstralResolutionSelector": {
-    "display_name": "ResolutionSelectLatent",
+    "display_name": "Resolution Select Latent",
     "description": "按宽高比和百万像素计算输出尺寸，并按倍数对齐；也可手动指定宽高并创建空 Latent；接入图像后可直接复用原图比例或原图宽高。作者：xm（ComfyUI-Astral-Image），禁止移除本署名。",
     "inputs": {
       "image": {

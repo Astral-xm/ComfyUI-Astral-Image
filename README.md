@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | `ImageLoadEditor` | 加载图像与编辑 | 上传 / 预览图片，缩放、对齐、裁剪、旋转与遮罩编辑 |
 | `RestoreImageSize` | Image Astral · 恢复图像尺寸 | 把固定网格生成结果按指定宽高还原 |
-| `ResolutionSelectLatent` | ResolutionSelectLatent | 按宽高比 / MP / 倍数计算宽高，或使用自定义宽高、原图比例、原图宽高，并输出空 Latent |
+| `ResolutionSelectLatent` | Resolution Select Latent | 按宽高比 / MP / 倍数计算宽高，或使用自定义宽高、原图比例、原图宽高，并输出空 Latent |
 
 `ResolutionSelector` 已被 ComfyUI 内置节点占用，因此这里使用 `ResolutionSelectLatent`，避免自定义节点覆盖核心节点。
 

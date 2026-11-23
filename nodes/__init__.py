@@ -20,8 +20,8 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ImageLoadEditor": "Load Image & Edit",
     "RestoreImageSize": "Image Astral · Restore Image Size",
-    "ResolutionSelectLatent": "ResolutionSelectLatent",
+    "ResolutionSelectLatent": "Resolution Select Latent",
     "XMAstralImageLoadEditor": "Load Image & Edit",
     "XMAstralRestoreImageSize": "Image Astral · Restore Image Size",
-    "XMAstralResolutionSelector": "ResolutionSelectLatent",
+    "XMAstralResolutionSelector": "Resolution Select Latent",
 }

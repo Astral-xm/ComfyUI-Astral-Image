@@ -79,7 +79,7 @@ class XMAstralResolutionSelector(io.ComfyNode):
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="ResolutionSelectLatent",
-            display_name="ResolutionSelectLatent",
+            display_name="Resolution Select Latent",
             category="Image Astral/Size",
             description=(
                 "Calculate output size from aspect ratio and megapixels, aligned "
@@ -90,6 +90,7 @@ class XMAstralResolutionSelector(io.ComfyNode):
             ),
             search_aliases=[
                 "ResolutionSelectLatent",
+                "Resolution Select Latent",
                 "resolution selector",
                 "custom image size",
                 "custom image dimensions",
