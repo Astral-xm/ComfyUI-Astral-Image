@@ -10,6 +10,88 @@ const LEGACY_NODE_TYPES = Object.freeze({
 });
 const CUSTOM_SIZE_MODE = "Custom Size";
 const LEGACY_CUSTOM_SIZE_MODE = "自定义宽高";
+const ORIGINAL_RATIO_MODE = "Original Ratio";
+const ORIGINAL_SIZE_MODE = "Original Size";
+const LEGACY_ORIGINAL_RATIO_MODES = new Set(["原始比例", "原图比例"]);
+const LEGACY_ORIGINAL_SIZE_MODES = new Set([
+  "原始尺寸",
+  "原图尺寸",
+  "原始宽高",
+  "原图宽高",
+]);
+const ASPECT_RATIO_VALUES = {
+  "1:1 (Square)": [1, 1],
+  "2:3 (Portrait Photo)": [2, 3],
+  "3:2 (Photo)": [3, 2],
+  "3:4 (Portrait Standard)": [3, 4],
+  "4:3 (Standard)": [4, 3],
+  "8:5 (Widescreen)": [8, 5],
+  "9:16 (Portrait Widescreen)": [9, 16],
+  "16:9 (Widescreen)": [16, 9],
+  "21:9 (Ultrawide)": [21, 9],
+};
+const IMAGE_SIZE_CACHE = new Map();
+const RESOLUTION_NODES = new Set();
+// ComfyUI's frontend does not read inputs.<slot>.options from locales, so the
+// Chinese option labels are applied to the combo widgets here.
+const COMBO_LABELS = Object.freeze({
+  scale_type: {
+    None: "无",
+    "By Resolution": "按分辨率",
+    "By Image Scale": "按图像比例",
+    "By Target Width": "按目标宽度",
+    "By Target Height": "按目标高度",
+  },
+  edge_mode: {
+    Stretch: "拉伸",
+    "Center Crop": "居中裁剪",
+    "Pad / Edge Fill": "填充 / 边缘填充",
+  },
+  aspect_ratio: {
+    "1:1 (Square)": "1:1（方形）",
+    "2:3 (Portrait Photo)": "2:3（竖版照片）",
+    "3:2 (Photo)": "3:2（照片）",
+    "3:4 (Portrait Standard)": "3:4（竖版标准）",
+    "4:3 (Standard)": "4:3（标准）",
+    "8:5 (Widescreen)": "8:5（宽屏）",
+    "9:16 (Portrait Widescreen)": "9:16（竖版宽屏）",
+    "16:9 (Widescreen)": "16:9（宽屏）",
+    "21:9 (Ultrawide)": "21:9（超宽）",
+    "Custom Size": "自定义宽高",
+    "Original Ratio": "原始比例",
+    "Original Size": "原始尺寸",
+  },
+});
+
+function localeIsZh() {
+  try {
+    const value = app?.ui?.settings?.getSettingValue?.("Comfy.Locale");
+    if (typeof value === "string" && value) {
+      return value.toLowerCase().startsWith("zh");
+    }
+  } catch {
+    // Settings are not ready yet; fall back to the document language.
+  }
+  return String(document?.documentElement?.lang || "")
+    .toLowerCase()
+    .startsWith("zh");
+}
+
+function patchComboLabels(node) {
+  for (const widget of node.widgets || []) {
+    const labels = COMBO_LABELS[widget.name];
+    if (!labels || widget.__astralComboLabels) continue;
+    widget.__astralComboLabels = true;
+    const options = widget.options || (widget.options = {});
+    const previous = options.getOptionLabel;
+    options.getOptionLabel = function (value) {
+      if (localeIsZh() && Object.prototype.hasOwnProperty.call(labels, value)) {
+        return labels[value];
+      }
+      return previous ? previous(value) : String(value ?? "");
+    };
+  }
+}
 const TARGET_WIDGETS = [
   "target_resolution",
   "target_scale",
@@ -19,15 +101,13 @@ const TARGET_WIDGETS = [
 const NATIVE_IMAGE_PREVIEW_WIDGET = "$$canvas-image-preview";
 const MASK_EDITOR_IMAGE_WIDGET = "image";
 const PASTE_IMAGE_SUBFOLDER = "image_astral/pasted";
-const EDITOR_OUTPUT_COUNT = 6;
+const EDITOR_OUTPUT_COUNT = 4;
 const NODE_SIZE_VERSION = 2;
 const NODE_SIZE_VERSION_PROPERTY = "xmAstralNodeSizeVersion";
 const EDITOR_OUTPUTS = [
   { name: "image", type: "IMAGE" },
   { name: "mask", type: "MASK" },
   { name: "mask_image", type: "IMAGE" },
-  { name: "width", type: "INT" },
-  { name: "height", type: "INT" },
   { name: "resolution", type: "INT" },
 ];
 const ORIGINAL_IMAGE_PROPERTY = "xmAstralOriginalImage";
@@ -258,6 +338,19 @@ function ensureNodeStyles() {
       text-align: center;
     }
     .xm-astral-meta.error { color: #ff8d8d; }
+    .xm-astral-resolution-preview {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 22px;
+      padding: 2px 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--descrip-text, #aeb4c0);
+      font-size: 12px;
+      text-align: center;
+    }
+    .xm-astral-resolution-preview.error { color: #ff8d8d; }
     .xm-astral-load-control {
       width: 100% !important;
     }
@@ -325,16 +418,220 @@ function setWidgetHidden(widget, hidden) {
   }
 }
 
+function normalizeAspectRatioValue(value) {
+  const text = String(value ?? "").trim();
+  if (LEGACY_ORIGINAL_RATIO_MODES.has(text)) return ORIGINAL_RATIO_MODE;
+  if (LEGACY_ORIGINAL_SIZE_MODES.has(text)) return ORIGINAL_SIZE_MODE;
+  return text;
+}
+
+function isOriginalRatioMode(value) {
+  return normalizeAspectRatioValue(value) === ORIGINAL_RATIO_MODE;
+}
+
+function isOriginalSizeMode(value) {
+  return normalizeAspectRatioValue(value) === ORIGINAL_SIZE_MODE;
+}
+
+function migrateResolutionSelectorWidgets(info) {
+  if (!info || typeof info !== "object") return info;
+  const values = info.widgets_values;
+  if (
+    Array.isArray(values) &&
+    values.length === 7
+  ) {
+    // Older nodes had a size_mode widget right after aspect_ratio.
+    const [aspect, sizeMode, ...rest] = values;
+    const legacyOriginalSize =
+      sizeMode === ORIGINAL_SIZE_MODE ||
+      LEGACY_ORIGINAL_SIZE_MODES.has(String(sizeMode ?? "").trim());
+    return {
+      ...info,
+      widgets_values: [legacyOriginalSize ? ORIGINAL_SIZE_MODE : aspect, ...rest],
+    };
+  }
+  if (
+    values &&
+    !Array.isArray(values) &&
+    typeof values === "object" &&
+    "size_mode" in values
+  ) {
+    const next = { ...values };
+    const sizeMode = String(next.size_mode ?? "").trim();
+    delete next.size_mode;
+    if (
+      sizeMode === ORIGINAL_SIZE_MODE ||
+      LEGACY_ORIGINAL_SIZE_MODES.has(sizeMode)
+    ) {
+      next.aspect_ratio = ORIGINAL_SIZE_MODE;
+    }
+    return { ...info, widgets_values: next };
+  }
+  return info;
+}
+
+function resolutionInputLink(node) {
+  const input = node.inputs?.find((item) => item.name === "image");
+  const linkId = input?.link;
+  if (linkId === undefined || linkId === null) return null;
+  const links = node.graph?.links;
+  if (!links) return null;
+  return typeof links.get === "function" ? links.get(linkId) : links[linkId];
+}
+
+function imageSizeFromFilename(origin) {
+  const widget = (origin.widgets || []).find(
+    (item) => item.name === "image" || item.name === "image_file",
+  );
+  const value = String(widget?.value || "").trim();
+  if (!value || value === "None") return null;
+  const cached = IMAGE_SIZE_CACHE.get(value);
+  if (cached) return cached;
+  if (IMAGE_SIZE_CACHE.has(value)) return null;
+  // Reserve the entry while the image loads, then refresh every resolution node.
+  IMAGE_SIZE_CACHE.set(value, null);
+  const parts = value.split("/");
+  const filename = parts.pop();
+  const subfolder = parts.join("/");
+  const query =
+    `/view?filename=${encodeURIComponent(filename)}` +
+    `&subfolder=${encodeURIComponent(subfolder)}&type=input`;
+  const url = typeof api?.apiURL === "function" ? api.apiURL(query) : query;
+  const image = new Image();
+  image.onload = () => {
+    IMAGE_SIZE_CACHE.set(value, {
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    });
+    refreshResolutionPreviews();
+  };
+  image.src = url;
+  return null;
+}
+
+function upstreamImageSize(node) {
+  const link = resolutionInputLink(node);
+  if (!link) return null;
+  const origin = node.graph?.getNodeById?.(link.origin_id);
+  if (!origin) return null;
+  const dimensions = origin._astralImageDimensions;
+  if (dimensions?.width > 0 && dimensions?.height > 0) {
+    return { width: dimensions.width, height: dimensions.height };
+  }
+  const preview = origin.imgs?.[0] || origin.images?.[0];
+  if (preview?.naturalWidth > 0 && preview?.naturalHeight > 0) {
+    return { width: preview.naturalWidth, height: preview.naturalHeight };
+  }
+  return imageSizeFromFilename(origin);
+}
+
+function computeResolutionPreview(node) {
+  const aspectRatio = normalizeAspectRatioValue(
+    findWidget(node, "aspect_ratio")?.value,
+  );
+  if (isOriginalSizeMode(aspectRatio)) {
+    const size = upstreamImageSize(node);
+    if (!size) {
+      return {
+        error: resolutionInputLink(node)
+          ? "Reading the connected image..."
+          : "Connect an image for Original Size",
+      };
+    }
+    return { width: size.width, height: size.height };
+  }
+  if (isCustomSizeMode(aspectRatio)) {
+    const width = Math.max(1, Math.round(numberValue(findWidget(node, "width"), 1024)));
+    const height = Math.max(1, Math.round(numberValue(findWidget(node, "height"), 1024)));
+    return { width, height };
+  }
+
+  let ratio;
+  if (isOriginalRatioMode(aspectRatio)) {
+    const size = upstreamImageSize(node);
+    if (!size) {
+      return {
+        error: resolutionInputLink(node)
+          ? "Reading the connected image..."
+          : "Connect an image for Original Ratio",
+      };
+    }
+    ratio = [size.width, size.height];
+  } else {
+    ratio = ASPECT_RATIO_VALUES[aspectRatio];
+    if (!ratio) return { error: "Choose an aspect ratio" };
+  }
+
+  const megapixels = numberValue(findWidget(node, "megapixels"), 2);
+  const multiple = Math.max(
+    1,
+    Math.round(numberValue(findWidget(node, "multiple"), 32)),
+  );
+  if (!Number.isFinite(megapixels) || megapixels <= 0) {
+    return { error: "Megapixels must be greater than 0" };
+  }
+  const scale = Math.sqrt((megapixels * 1024 * 1024) / (ratio[0] * ratio[1]));
+  return {
+    width: Math.round((ratio[0] * scale) / multiple) * multiple,
+    height: Math.round((ratio[1] * scale) / multiple) * multiple,
+  };
+}
+
+function updateResolutionPreview(node) {
+  const element = node._astralSizePreview;
+  if (!element) return;
+  const result = computeResolutionPreview(node);
+  const text = result.error
+    ? result.error
+    : `Output: ${result.width} × ${result.height}`;
+  if (element.textContent !== text) element.textContent = text;
+  element.classList.toggle("error", Boolean(result.error));
+}
+
+function refreshResolutionPreviews() {
+  for (const node of RESOLUTION_NODES) {
+    if (!node.graph) {
+      RESOLUTION_NODES.delete(node);
+      continue;
+    }
+    updateResolutionPreview(node);
+  }
+}
+
+function ensureResolutionPreview(node) {
+  if (node._astralSizePreview) return;
+  if (typeof node.addDOMWidget !== "function") return;
+  const element = document.createElement("div");
+  element.className = "xm-astral-resolution-preview";
+  node.addDOMWidget("xm_astral_resolution_preview", "div", element, {
+    serialize: false,
+    hideOnZoom: false,
+    getMinHeight: () => 22,
+    getMaxHeight: () => 22,
+  });
+  node._astralSizePreview = element;
+  const computed = node.computeSize?.();
+  if (
+    Array.isArray(node.size) &&
+    Array.isArray(computed) &&
+    node.size[1] < computed[1]
+  ) {
+    node.setSize?.([Math.max(node.size[0], computed[0]), computed[1]]);
+  }
+}
+
 function syncResolutionSelectorWidgets(node) {
   const modeWidget = findWidget(node, "aspect_ratio");
   if (modeWidget && modeWidget.value === LEGACY_CUSTOM_SIZE_MODE) {
     setWidgetValue(modeWidget, CUSTOM_SIZE_MODE);
   }
-  const customSize = isCustomSizeMode(modeWidget?.value);
-  setWidgetHidden(findWidget(node, "megapixels"), customSize);
-  setWidgetHidden(findWidget(node, "multiple"), customSize);
+  const originalSize = isOriginalSizeMode(modeWidget?.value);
+  const customSize = !originalSize && isCustomSizeMode(modeWidget?.value);
+  setWidgetHidden(findWidget(node, "megapixels"), originalSize || customSize);
+  setWidgetHidden(findWidget(node, "multiple"), originalSize || customSize);
   setWidgetHidden(findWidget(node, "width"), !customSize);
   setWidgetHidden(findWidget(node, "height"), !customSize);
+  updateResolutionPreview(node);
   node.graph?.setDirtyCanvas?.(true, true);
 }
 
@@ -343,17 +640,57 @@ function hookResolutionSelectorWidgets(node) {
   const modeWidget = findWidget(node, "aspect_ratio");
   if (!modeWidget) return;
   node._astralResolutionSelectorHooked = true;
-  const originalCallback = modeWidget.callback;
-  modeWidget.callback = function (...args) {
-    const result = originalCallback?.apply(this, args);
-    const refresh = () => syncResolutionSelectorWidgets(node);
-    if (result && typeof result.then === "function") {
-      result.then(refresh, refresh);
-    } else {
-      refresh();
+  patchComboLabels(node);
+  ensureResolutionPreview(node);
+  RESOLUTION_NODES.add(node);
+
+  for (const name of [
+    "aspect_ratio",
+    "megapixels",
+    "multiple",
+    "width",
+    "height",
+  ]) {
+    const widget = findWidget(node, name);
+    if (!widget) continue;
+    const originalCallback = widget.callback;
+    widget.callback = function (...args) {
+      const result = originalCallback?.apply(this, args);
+      const refresh = () => syncResolutionSelectorWidgets(node);
+      if (result && typeof result.then === "function") {
+        result.then(refresh, refresh);
+      } else {
+        refresh();
+      }
+      return result;
+    };
+  }
+
+  const originalConnections = node.onConnectionsChange;
+  node.onConnectionsChange = function (...args) {
+    const result = originalConnections?.apply(this, args);
+    syncResolutionSelectorWidgets(this);
+    return result;
+  };
+
+  const originalDraw = node.onDrawForeground;
+  node.onDrawForeground = function (...args) {
+    const result = originalDraw?.apply(this, args);
+    const now = Date.now();
+    if (now - (this._astralSizePreviewAt || 0) > 500) {
+      this._astralSizePreviewAt = now;
+      updateResolutionPreview(this);
     }
     return result;
   };
+
+  const originalRemoved = node.onRemoved;
+  node.onRemoved = function (...args) {
+    RESOLUTION_NODES.delete(this);
+    const result = originalRemoved?.apply(this, args);
+    return result;
+  };
+
   syncResolutionSelectorWidgets(node);
 }
 
@@ -3237,6 +3574,7 @@ app.registerExtension({
         Array.isArray(args[0]?.size) && args[0].size.length >= 2;
       args[0] = migrateSerializedWidgetValues(this, args[0]);
       const result = originalConfigure?.apply(this, args);
+      patchComboLabels(this);
       trimImageEditorOutputs(this);
       // Hide the inactive target/parameter rows before the canvas performs its
       // first layout pass. Otherwise all rows briefly count as visible and the
@@ -3252,6 +3590,7 @@ app.registerExtension({
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function (...args) {
       const result = originalOnNodeCreated?.apply(this, args);
+      patchComboLabels(this);
       trimImageEditorOutputs(this);
       activateImageNode(this);
       return result;
@@ -3266,6 +3605,7 @@ app.registerExtension({
 
     const originalConfigure = nodeType.prototype.configure;
     nodeType.prototype.configure = function (...args) {
+      args[0] = migrateResolutionSelectorWidgets(args[0]);
       const result = originalConfigure?.apply(this, args);
       hookResolutionSelectorWidgets(this);
       window.setTimeout(() => syncResolutionSelectorWidgets(this), 0);

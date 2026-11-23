@@ -120,6 +120,14 @@ def check_resolution_selector(pack) -> str:
         raise SystemExit("宽高比缺少 8:5")
     if "Custom Size" not in ratio_options:
         raise SystemExit("宽高比缺少 Custom Size")
+    if "Original Ratio" not in ratio_options:
+        raise SystemExit("宽高比缺少 Original Ratio")
+    if "Original Size" not in ratio_options:
+        raise SystemExit("宽高比缺少 Original Size")
+    if "size_mode" in inputs:
+        raise SystemExit("宽高比里不应再单独提供 size_mode 参数")
+    if "image" not in inputs or not getattr(inputs["image"], "optional", False):
+        raise SystemExit("尺寸选择器缺少可选的图像输入")
 
     standard = node_cls.execute(
         aspect_ratio="8:5 (Widescreen)",
@@ -167,7 +175,62 @@ def check_resolution_selector(pack) -> str:
                 f"自定义 Latent 形状错误：{tuple(custom_latent['samples'].shape)}"
             )
 
-    return "8:5、自定义 1000 x 613、批次与 Latent 通过"
+    import torch
+
+    source_image = torch.zeros((1, 600, 900, 3))
+    original = node_cls.execute(
+        aspect_ratio="Original Size",
+        megapixels=2.0,
+        multiple=32,
+        width=1024,
+        height=1024,
+        batch_size=1,
+        image=source_image,
+    )
+    original_latent, original_width, original_height = tuple(original.args)
+    if (original_width, original_height) != (900, 600):
+        raise SystemExit(
+            "原始尺寸没有输出原图宽高："
+            f"实际 {original_width} x {original_height}"
+        )
+    if tuple(original_latent["samples"].shape) != (1, 4, 75, 112):
+        raise SystemExit(
+            f"原始尺寸 Latent 形状错误：{tuple(original_latent['samples'].shape)}"
+        )
+
+    for aspect_value in ("Original Ratio", "原始比例"):
+        ratio_result = node_cls.execute(
+            aspect_ratio=aspect_value,
+            megapixels=2.0,
+            multiple=32,
+            width=1024,
+            height=1024,
+            batch_size=1,
+            image=source_image,
+        )
+        _, ratio_width, ratio_height = tuple(ratio_result.args)
+        if abs((ratio_width / ratio_height) - 1.5) > 0.1:
+            raise SystemExit(
+                "原始比例没有沿用原图比例："
+                f"{aspect_value} -> {ratio_width} x {ratio_height}"
+            )
+
+    for aspect_value in ("Original Ratio", "Original Size", "原始尺寸"):
+        try:
+            node_cls.execute(
+                aspect_ratio=aspect_value,
+                megapixels=2.0,
+                multiple=32,
+                width=1024,
+                height=1024,
+                batch_size=1,
+                image=None,
+            )
+        except ValueError:
+            continue
+        raise SystemExit(f"{aspect_value} 在没有图像输入时没有报错")
+
+    return "8:5、自定义 1000 x 613、原始比例/原始尺寸、批次与 Latent 通过"
 
 
 def check_qwen21(pack) -> str:
@@ -279,8 +342,6 @@ def check_image_editor(pack, pack_root: Path, comfy_root: Path) -> str:
         "image",
         "mask",
         "mask_image",
-        "width",
-        "height",
         "resolution",
     ]
     actual_outputs = [item.display_name for item in schema.outputs]
@@ -554,13 +615,16 @@ def check_image_editor(pack, pack_root: Path, comfy_root: Path) -> str:
             )
 
         output_values = tuple(result.args)
-        if len(output_values) != 6:
+        if len(output_values) != 4:
             raise SystemExit(
-                f"图像加载与编辑节点应返回 6 个输出，实际返回 {len(output_values)} 个"
+                f"图像加载与编辑节点应返回 4 个输出，实际返回 {len(output_values)} 个"
             )
-        image, mask, mask_image, width, height, resolution = output_values
-        if (width, height) != (80, 50):
-            raise SystemExit(f"无缩放模式没有保持原尺寸：{width}x{height}")
+        image, mask, mask_image, resolution = output_values
+        if (image.shape[2], image.shape[1]) != (80, 50):
+            raise SystemExit(
+                "无缩放模式没有保持原尺寸："
+                f"{image.shape[2]}x{image.shape[1]}"
+            )
         if resolution != 512:
             raise SystemExit(f"无缩放模式 resolution 输出错误：{resolution}")
         if image.shape != (1, 50, 80, 3) or mask.shape != (1, 50, 80):
@@ -583,14 +647,16 @@ def check_image_editor(pack, pack_root: Path, comfy_root: Path) -> str:
             raise SystemExit("默认非遮罩区域没有输出为白色")
 
         resolution_values = tuple(resolution_result.args)
-        resolution_image, _, _, resolution_width, resolution_height, bucket = (
-            resolution_values
-        )
-        if (resolution_width, resolution_height, bucket) != (1376, 864, 1088):
+        resolution_image, _, _, bucket = resolution_values
+        if (resolution_image.shape[2], resolution_image.shape[1], bucket) != (
+            1376,
+            864,
+            1088,
+        ):
             raise SystemExit(
                 "按分辨率 execute 输出错误："
                 f"期望 1376x864 @ 1088，实际 "
-                f"{resolution_width}x{resolution_height} @ {bucket}"
+                f"{resolution_image.shape[2]}x{resolution_image.shape[1]} @ {bucket}"
             )
         if resolution_image.shape != (1, 864, 1376, 3):
             raise SystemExit(

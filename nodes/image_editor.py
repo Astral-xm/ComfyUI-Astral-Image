@@ -617,8 +617,6 @@ class XMAstralImageLoadEditor(io.ComfyNode):
                 io.Image.Output(display_name="image"),
                 io.Mask.Output(display_name="mask"),
                 io.Image.Output(display_name="mask_image"),
-                io.Int.Output(display_name="width"),
-                io.Int.Output(display_name="height"),
                 io.Int.Output(
                     display_name="resolution",
                     tooltip="Qwen resolution bucket resolved from the final size.",
@@ -695,7 +693,7 @@ class XMAstralImageLoadEditor(io.ComfyNode):
             mask_grow=int(mask_grow),
         )
         mask_image = _mask_to_rgb_image(mask, parsed_mask_color)
-        return io.NodeOutput(image, mask, mask_image, width, height, resolution)
+        return io.NodeOutput(image, mask, mask_image, resolution)
 
     @classmethod
     def validate_inputs(cls, image_file=None, **kwargs) -> bool | str:

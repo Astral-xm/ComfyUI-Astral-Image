@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | `ImageLoadEditor` | 加载图像与编辑 | 上传 / 预览图片，缩放、对齐、裁剪、旋转与遮罩编辑 |
 | `RestoreImageSize` | Image Astral · 恢复图像尺寸 | 把固定网格生成结果按指定宽高还原 |
-| `ResolutionSelectLatent` | ResolutionSelectLatent | 按宽高比 / MP / 倍数计算宽高，或使用自定义宽高，并输出空 Latent |
+| `ResolutionSelectLatent` | ResolutionSelectLatent | 按宽高比 / MP / 倍数计算宽高，或使用自定义宽高、原图比例、原图宽高，并输出空 Latent |
 
 `ResolutionSelector` 已被 ComfyUI 内置节点占用，因此这里使用 `ResolutionSelectLatent`，避免自定义节点覆盖核心节点。
 
@@ -78,6 +78,13 @@ ComfyUI/custom_nodes/ComfyUI-Astral-Image
 
 选择`自定义宽高`后，下方会显示`宽度`和`高度`，并隐藏`百万像素`与`倍数`。这两个手动尺寸原样输出，不参与比例计算，也不会被倍数取整。例如填写 `1000 × 613`，宽高输出仍是 `1000 × 613`。空 Latent 按 ComfyUI 的标准 VAE 8 倍网格创建，空间尺寸为 `高度 // 8 × 宽度 // 8`；因此非 8 倍数宽高在 Latent 解码时仍受 VAE 网格限制，但节点输出的宽高数值保持用户输入值。
 
+节点新增可选的`图像`输入，`宽高比`下拉中增加两项：
+
+- `原始比例`：使用接入图像的比例，再按`百万像素`和`倍数`计算宽高。
+- `原始尺寸`：`宽度`和`高度`直接输出原图的精确宽高，`Latent` 也按该尺寸创建，忽略`百万像素`与`倍数`。
+
+接入图像后，节点底部会实时显示计算出的输出尺寸（如 `Output: 1088 × 1920`）；原图尺寸尚未读取完成时会提示等待。没有接入图像却使用`原始比例`或`原始尺寸`时，执行会报错。
+
 `批次大小`会直接作用于 Latent 的第一维。返回的空 Latent 使用 4 个通道，可直接连接到 `KSampler` 的 `latent_image`。
 
 ## 图像加载与编辑
@@ -138,8 +145,9 @@ ComfyUI/input/image_astral/edited
 - `image`：缩放和对齐后的图像。
 - `mask`：缩放和对齐后的遮罩。
 - `mask_image`：遮罩图像。非遮罩区域为白色，遮罩区域使用设置的 RGB 颜色。
-- `width`、`height`：最终图像宽高。
 - `resolution`：根据最终目标尺寸自动解析的 Qwen resolution 档位，可直接接到 `TextEncodeQwenImage21.resolution`。
+
+旧版本的 `width` 和 `height` 输出已移除；需要最终宽高时，请使用 `ResolutionSelectLatent` 的 `宽度`、`高度` 输出。
 
 ### 图片右键菜单与提示词反推
 
